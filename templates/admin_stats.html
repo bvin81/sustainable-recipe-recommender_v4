@@ -171,10 +171,10 @@
                             {% endif %}
                         </span>
                     </td>
-                    <td>{{ version_data.count }}</td>
+                    <td>{{ version_data.registered }}</td>
                     <td>{{ version_data.completed }}</td>
-                    <td>{{ "%.1f"|format((version_data.completed / version_data.count * 100) if version_data.count > 0 else 0) }}%</td>
-                    <td>{{ "%.1f"|format((version_data.count / stats.get('total_participants', 1) * 100)) }}%</td>
+                    <td>{{ "%.1f"|format((version_data.completed / version_data.registered * 100) if version_data.registered > 0 else 0) }}%</td>
+                    <td>{{ "%.1f"|format((version_data.registered / stats.get('total_participants', 1) * 100)) }}%</td>
                 </tr>
                 {% endfor %}
             </tbody>
