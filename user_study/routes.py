@@ -46,23 +46,24 @@ class EnhancedDatabase:
         print("✅ Enhanced database initialized")
     
     def _init_enhanced(self):
-        """Javított adatbázis séma létrehozása"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            
-            print("🔍 DEBUG: Creating users table...")
-            
-            # 1. USERS tábla
-            conn.execute('''CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                display_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1
-            )''')
-            print("✅ DEBUG: Users table created")
+    """Javított adatbázis séma létrehozása EXTRA BIZTONSÁGGAL"""
+    try:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        print("🔍 DEBUG: Creating users table...")
+        
+        # EXPLICIT módon: először töröljük, majd létrehozzuk
+        conn.execute('DROP TABLE IF EXISTS users')
+        conn.execute('''CREATE TABLE users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT 1
+        )''')
+        print("✅ DEBUG: Users table FORCED creation")
             
             # 2. USER_PROFILES tábla
             conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
@@ -114,13 +115,24 @@ class EnhancedDatabase:
     
     # USER MANAGEMENT
     def create_user(self, email, password, display_name=None):
-        """Javított user létrehozás"""
-        try:
-            conn = sqlite3.connect(self.db_path)
-            
-            password_hash = self._hash_password(password)
-            
-            print(f"🔍 DEBUG: Creating user {email}")
+    """Javított user létrehozás TÁBLA ELLENŐRZÉSSEL"""
+    try:
+        conn = sqlite3.connect(self.db_path)
+        
+        # BIZTONSÁGI ELLENŐRZÉS: létezik-e a users tábla?
+        table_check = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        
+        if not table_check:
+            print("⚠️ DEBUG: Users table missing! Creating now...")
+            conn.close()  # Zárjuk le előbb
+            self._init_enhanced()  # Újrainicializálás
+            conn = sqlite3.connect(self.db_path)  # Újra nyitjuk
+        
+        password_hash = self._hash_password(password)
+        
+        print(f"🔍 DEBUG: Creating user {email}")
             
             cursor = conn.execute(
                 '''INSERT INTO users (email, password_hash, display_name) 
