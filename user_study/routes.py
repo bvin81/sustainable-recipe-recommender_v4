@@ -879,7 +879,8 @@ def register():
                 return render_template('register.html', error='A jelszó legalább 6 karakter hosszú legyen')
             
             # User létrehozása
-            user_id = db.create_user(email, password, display_name)
+            version = get_user_version()
+            user_id = db.create_user(email, password, display_name, version)
             if not user_id:
                 return render_template('register.html', error='Ez az email cím már regisztrált')
             
