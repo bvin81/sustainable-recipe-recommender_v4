@@ -129,21 +129,29 @@ class EnhancedDatabase:
             return self.conn
     
     def _init_tables(self):
-        """Táblák létrehozása (PostgreSQL + SQLite kompatibilis)"""
+        """Táblák létrehozása (PostgreSQL + SQLite kompatibilis) + VERSION TRACKING"""
         try:
             if self.db_type == 'postgresql':
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 
-                # PostgreSQL szintaxis
+                # PostgreSQL szintaxis - VERSION OSZLOPPAL
                 cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                     user_id SERIAL PRIMARY KEY,
                     email VARCHAR(255) UNIQUE NOT NULL,
                     password_hash VARCHAR(255) NOT NULL,
                     display_name VARCHAR(255),
+                    version VARCHAR(10) DEFAULT 'v1',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT TRUE
                 )''')
+                
+                # VERSION oszlop hozzáadása meglévő táblához (ha még nincs)
+                try:
+                    cursor.execute('ALTER TABLE users ADD COLUMN version VARCHAR(10) DEFAULT \'v1\'')
+                    print("✅ Version column added to existing users table")
+                except:
+                    print("🔍 Version column already exists or table is new")
                 
                 cursor.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
                     user_id INTEGER PRIMARY KEY,
@@ -180,18 +188,26 @@ class EnhancedDatabase:
                 conn.commit()
                 cursor.close()
                 conn.close()
-                print("✅ PostgreSQL tables created")
+                print("✅ PostgreSQL tables created with version tracking")
                 
             else:
-                # SQLite szintaxis (eredeti)
+                # SQLite szintaxis - VERSION OSZLOPPAL
                 self.conn.execute('''CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     email TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
                     display_name TEXT,
+                    version TEXT DEFAULT 'v1',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT 1
                 )''')
+                
+                # VERSION oszlop hozzáadása meglévő táblához (ha még nincs)
+                try:
+                    self.conn.execute('ALTER TABLE users ADD COLUMN version TEXT DEFAULT \'v1\'')
+                    print("✅ Version column added to existing SQLite users table")
+                except:
+                    print("🔍 Version column already exists or table is new")
                 
                 self.conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
                     user_id INTEGER PRIMARY KEY,
@@ -223,29 +239,29 @@ class EnhancedDatabase:
                 )''')
                 
                 self.conn.commit()
-                print("✅ SQLite tables created")
+                print("✅ SQLite tables created with version tracking")
                 
         except Exception as e:
             print(f"❌ Table creation failed: {e}")
             import traceback
             print(f"❌ Traceback: {traceback.format_exc()}")
     
-    def create_user(self, email, password, display_name=None):
-        """Universal user creation"""
+    def create_user(self, email, password, display_name=None, version='v1'):
+        """Universal user creation WITH VERSION TRACKING"""
         try:
             password_hash = self._hash_password(password)
             display_name = display_name or email.split('@')[0]
             
-            print(f"🔍 Creating user {email} in {self.db_type}")
+            print(f"🔍 Creating user {email} in {self.db_type} with version {version}")
             
             if self.db_type == 'postgresql':
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 
                 cursor.execute(
-                    '''INSERT INTO users (email, password_hash, display_name) 
-                       VALUES (%s, %s, %s) RETURNING user_id''',
-                    (email, password_hash, display_name)
+                    '''INSERT INTO users (email, password_hash, display_name, version) 
+                       VALUES (%s, %s, %s, %s) RETURNING user_id''',
+                    (email, password_hash, display_name, version)
                 )
                 user_id = cursor.fetchone()['user_id']
                 
@@ -255,14 +271,14 @@ class EnhancedDatabase:
                 
             else:
                 cursor = self.conn.execute(
-                    '''INSERT INTO users (email, password_hash, display_name) 
-                       VALUES (?, ?, ?)''',
-                    (email, password_hash, display_name)
+                    '''INSERT INTO users (email, password_hash, display_name, version) 
+                       VALUES (?, ?, ?, ?)''',
+                    (email, password_hash, display_name, version)
                 )
                 user_id = cursor.lastrowid
                 self.conn.commit()
             
-            print(f"✅ User created: {email} (ID: {user_id})")
+            print(f"✅ User created: {email} (ID: {user_id}, Version: {version})")
             return user_id
             
         except Exception as e:
@@ -414,38 +430,86 @@ class EnhancedDatabase:
             print(f"❌ Questionnaire save failed: {e}")
     
     def get_stats(self):
-        """Universal statistics"""
+        """Universal statistics WITH VERSION BREAKDOWN"""
         try:
             if self.db_type == 'postgresql':
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 
+                # Összesített statisztikák
                 cursor.execute('SELECT COUNT(*) as count FROM users')
                 total = cursor.fetchone()['count']
                 
                 cursor.execute('SELECT COUNT(*) as count FROM questionnaire')
                 completed = cursor.fetchone()['count']
                 
+                # Verzió szerinti bontás
+                cursor.execute('''
+                    SELECT 
+                        u.version,
+                        COUNT(u.user_id) as registered,
+                        COUNT(q.user_id) as completed
+                    FROM users u
+                    LEFT JOIN questionnaire q ON u.user_id = q.user_id
+                    GROUP BY u.version
+                    ORDER BY u.version
+                ''')
+                version_data = cursor.fetchall()
+                
                 cursor.close()
                 conn.close()
                 
             else:
+                # SQLite lekérdezések
                 result = self.conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
                 total = result['count'] if result else 0
                 
                 result = self.conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
                 completed = result['count'] if result else 0
+                
+                # Verzió szerinti bontás
+                version_data = self.conn.execute('''
+                    SELECT 
+                        u.version,
+                        COUNT(u.user_id) as registered,
+                        COUNT(q.user_id) as completed
+                    FROM users u
+                    LEFT JOIN questionnaire q ON u.user_id = q.user_id
+                    GROUP BY u.version
+                    ORDER BY u.version
+                ''').fetchall()
+            
+            # Verzió adatok formázása
+            version_distribution = []
+            for row in version_data:
+                version = row['version'] or 'v1'  # Fallback ha NULL
+                registered = row['registered']
+                completed = row['completed']
+                completion_rate = (completed / registered * 100) if registered > 0 else 0
+                participation_rate = (registered / total * 100) if total > 0 else 0
+                
+                version_distribution.append({
+                    'version': version,
+                    'registered': registered,
+                    'completed': completed,
+                    'completion_rate': round(completion_rate, 1),
+                    'participation_rate': round(participation_rate, 1)
+                })
+            
+            print(f"📊 Version stats: {version_distribution}")
             
             return {
                 'total_participants': total,
                 'completed_participants': completed,
                 'completion_rate': completed / total if total > 0 else 0,
                 'avg_interactions_per_user': 0,
-                'version_distribution': []
+                'version_distribution': version_distribution
             }
             
         except Exception as e:
             print(f"❌ Stats failed: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
             return {
                 'total_participants': 0,
                 'completed_participants': 0,
