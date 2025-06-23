@@ -1071,6 +1071,23 @@ def admin_stats():
     except Exception as e:
         return f"Stats error: {e}", 500
 
+@user_study_bp.route('/admin/export/csv')
+def export_csv():
+    try:
+        stats = db.get_stats()
+        # CSV generálás logika
+        return send_file(csv_file, as_attachment=True, download_name='study_data.csv')
+    except Exception as e:
+        return f"Export error: {e}", 500
+
+@user_study_bp.route('/admin/export/json')
+def export_json():
+    try:
+        stats = db.get_stats()
+        return jsonify(stats)
+    except Exception as e:
+        return f"Export error: {e}", 500
+
 # Export
 __all__ = ['user_study_bp']
 
