@@ -35,8 +35,10 @@ print(f"🔧 Project root: {project_root}")
 # LÉPÉS 1: Egyszerűsített Enhanced Database
 # Cseréld ki a MemoryDatabase osztályt erre:
 
+# Javított EnhancedDatabase - cseréld ki a teljes osztályt:
+
 class EnhancedDatabase:
-    """Bővített adatbázis user auth + collaborative filtering alapokkal"""
+    """Javított adatbázis user auth támogatással"""
     
     def __init__(self):
         self.db_path = ":memory:"  # Heroku-kompatibilis
@@ -44,63 +46,82 @@ class EnhancedDatabase:
         print("✅ Enhanced database initialized")
     
     def _init_enhanced(self):
-        """Bővített adatbázis séma - egyszerűsített"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        
-        # 1. USERS tábla - főfiók adatok
-        conn.execute('''CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            display_name TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            is_active BOOLEAN DEFAULT 1
-        )''')
-        
-        # 2. USER_PROFILES tábla - egyszerűsített
-        conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
-            user_id INTEGER PRIMARY KEY,
-            age_group TEXT,
-            education TEXT,
-            cooking_frequency TEXT,
-            sustainability_awareness INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        # 3. RECIPE_RATINGS tábla - collaborative filtering alapja  
-        conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
-            rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            recipe_id INTEGER,
-            rating INTEGER,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        # 4. QUESTIONNAIRE tábla - eredeti megtartása
-        conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
-            user_id INTEGER PRIMARY KEY,
-            system_usability INTEGER,
-            recommendation_quality INTEGER,
-            trust_level INTEGER,
-            explanation_clarity INTEGER,
-            sustainability_importance INTEGER,
-            overall_satisfaction INTEGER,
-            additional_comments TEXT,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        conn.commit()
-        conn.close()
-    
-    # ALAPVETŐ USER MANAGEMENT
-    def create_user(self, email, password, display_name=None):
-        """Új user létrehozása"""
-        conn = sqlite3.connect(self.db_path)
-        
-        password_hash = self._hash_password(password)
-        
+        """Javított adatbázis séma létrehozása"""
         try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            
+            print("🔍 DEBUG: Creating users table...")
+            
+            # 1. USERS tábla
+            conn.execute('''CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                display_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT 1
+            )''')
+            print("✅ DEBUG: Users table created")
+            
+            # 2. USER_PROFILES tábla
+            conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
+                user_id INTEGER PRIMARY KEY,
+                age_group TEXT,
+                education TEXT,
+                cooking_frequency TEXT,
+                sustainability_awareness INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            print("✅ DEBUG: User_profiles table created")
+            
+            # 3. RECIPE_RATINGS tábla
+            conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
+                rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                recipe_id INTEGER,
+                rating INTEGER,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            print("✅ DEBUG: Recipe_ratings table created")
+            
+            # 4. QUESTIONNAIRE tábla - eredeti megtartása
+            conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
+                user_id INTEGER PRIMARY KEY,
+                system_usability INTEGER,
+                recommendation_quality INTEGER,
+                trust_level INTEGER,
+                explanation_clarity INTEGER,
+                sustainability_importance INTEGER,
+                overall_satisfaction INTEGER,
+                additional_comments TEXT,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )''')
+            print("✅ DEBUG: Questionnaire table created")
+            
+            # Táblák ellenőrzése
+            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            table_names = [t[0] for t in tables]
+            print(f"✅ DEBUG: Created tables: {table_names}")
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Database initialization failed: {e}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+    
+    # USER MANAGEMENT
+    def create_user(self, email, password, display_name=None):
+        """Javított user létrehozás"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            password_hash = self._hash_password(password)
+            
+            print(f"🔍 DEBUG: Creating user {email}")
+            
             cursor = conn.execute(
                 '''INSERT INTO users (email, password_hash, display_name) 
                    VALUES (?, ?, ?)''',
@@ -108,121 +129,159 @@ class EnhancedDatabase:
             )
             user_id = cursor.lastrowid
             conn.commit()
-            print(f"✅ User created: {email} (ID: {user_id})")
-            return user_id
-        except sqlite3.IntegrityError:
-            print(f"⚠️ User already exists: {email}")
-            return None
-        finally:
             conn.close()
+            
+            print(f"✅ DEBUG: User created successfully: {email} (ID: {user_id})")
+            return user_id
+            
+        except sqlite3.IntegrityError as e:
+            print(f"⚠️ DEBUG: User already exists: {email} - {e}")
+            return None
+        except Exception as e:
+            print(f"❌ DEBUG: User creation failed: {e}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+            return None
     
     def authenticate_user(self, email, password):
         """User bejelentkezés"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        
-        user = conn.execute(
-            'SELECT * FROM users WHERE email = ? AND is_active = 1',
-            (email,)
-        ).fetchone()
-        
-        conn.close()
-        
-        if user and self._verify_password(password, user['password_hash']):
-            return dict(user)
-        
-        return None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            
+            user = conn.execute(
+                'SELECT * FROM users WHERE email = ? AND is_active = 1',
+                (email,)
+            ).fetchone()
+            
+            conn.close()
+            
+            if user and self._verify_password(password, user['password_hash']):
+                return dict(user)
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Authentication failed: {e}")
+            return None
     
     def create_user_profile(self, user_id, profile_data):
         """User profil létrehozása"""
-        conn = sqlite3.connect(self.db_path)
-        
-        conn.execute('''INSERT OR REPLACE INTO user_profiles 
-            (user_id, age_group, education, cooking_frequency, sustainability_awareness)
-            VALUES (?, ?, ?, ?, ?)''',
-            (user_id, profile_data.get('age_group'), profile_data.get('education'),
-             profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
-        )
-        
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            conn.execute('''INSERT OR REPLACE INTO user_profiles 
+                (user_id, age_group, education, cooking_frequency, sustainability_awareness)
+                VALUES (?, ?, ?, ?, ?)''',
+                (user_id, profile_data.get('age_group'), profile_data.get('education'),
+                 profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
+            )
+            
+            conn.commit()
+            conn.close()
+            print(f"✅ DEBUG: Profile created for user {user_id}")
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Profile creation failed: {e}")
     
-    # RECIPE RATING METHODS - collaborative filtering alapja
+    # VISSZAFELÉ KOMPATIBILIS METHODS
     def log_interaction(self, user_id, recipe_id, rating, explanation_helpful=None, view_time=None):
-        """Recept értékelés mentése - visszafelé kompatibilis"""
-        conn = sqlite3.connect(self.db_path)
-        
-        conn.execute('''INSERT INTO recipe_ratings 
-            (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
-            (user_id, recipe_id, rating)
-        )
-        
-        conn.commit()
-        conn.close()
+        """Recipe értékelés - visszafelé kompatibilis"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            conn.execute('''INSERT INTO recipe_ratings 
+                (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
+                (user_id, recipe_id, rating)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Rating log failed: {e}")
     
-    def get_user_ratings(self, user_id):
-        """User értékelései collaborative filtering-hez"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        
-        ratings = conn.execute(
-            'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
-            (user_id,)
-        ).fetchall()
-        
-        conn.close()
-        return [(r['recipe_id'], r['rating']) for r in ratings]
-    
-    # QUESTIONNAIRE - eredeti funkció megtartása
     def save_questionnaire(self, user_id, responses):
         """Kérdőív mentése - visszafelé kompatibilis"""
-        conn = sqlite3.connect(self.db_path)
-        
-        conn.execute('''INSERT OR REPLACE INTO questionnaire 
-            (user_id, system_usability, recommendation_quality, trust_level,
-             explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (user_id, responses['system_usability'], responses['recommendation_quality'],
-             responses['trust_level'], responses['explanation_clarity'],
-             responses['sustainability_importance'], responses['overall_satisfaction'],
-             responses['additional_comments']))
-        
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            
+            conn.execute('''INSERT OR REPLACE INTO questionnaire 
+                (user_id, system_usability, recommendation_quality, trust_level,
+                 explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (user_id, responses['system_usability'], responses['recommendation_quality'],
+                 responses['trust_level'], responses['explanation_clarity'],
+                 responses['sustainability_importance'], responses['overall_satisfaction'],
+                 responses['additional_comments']))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Questionnaire save failed: {e}")
     
     def get_stats(self):
-        """Admin statisztikák - eredeti megtartása"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        
-        # Összes user
-        result = conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
-        total = result['count'] if result else 0
-        
-        # Befejezett kérdőívek
-        result = conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
-        completed = result['count'] if result else 0
-        
-        conn.close()
-        
-        return {
-            'total_participants': total,
-            'completed_participants': completed,
-            'completion_rate': completed / total if total > 0 else 0,
-            'avg_interactions_per_user': 0,
-            'version_distribution': []
-        }
+        """Admin statisztikák"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            
+            # Összes user
+            result = conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
+            total = result['count'] if result else 0
+            
+            # Befejezett kérdőívek
+            result = conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
+            completed = result['count'] if result else 0
+            
+            conn.close()
+            
+            return {
+                'total_participants': total,
+                'completed_participants': completed,
+                'completion_rate': completed / total if total > 0 else 0,
+                'avg_interactions_per_user': 0,
+                'version_distribution': []
+            }
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Stats failed: {e}")
+            return {
+                'total_participants': 0,
+                'completed_participants': 0,
+                'completion_rate': 0,
+                'avg_interactions_per_user': 0,
+                'version_distribution': []
+            }
+    
+    def get_user_ratings(self, user_id):
+        """User értékelései"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            
+            ratings = conn.execute(
+                'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
+                (user_id,)
+            ).fetchall()
+            
+            conn.close()
+            return [(r['recipe_id'], r['rating']) for r in ratings]
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Get ratings failed: {e}")
+            return []
     
     # HELPER METHODS
     def _hash_password(self, password):
-        """Egyszerű jelszó hash (termelésben bcrypt használandó!)"""
+        """Egyszerű jelszó hash"""
         import hashlib
         return hashlib.sha256(password.encode()).hexdigest()
     
     def _verify_password(self, password, password_hash):
         """Jelszó ellenőrzés"""
         return self._hash_password(password) == password_hash
-
 
 class HungarianJSONRecommender:
     """Magyar receptek JSON-ből - encoding problémák nélkül"""
