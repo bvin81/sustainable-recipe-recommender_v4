@@ -456,17 +456,45 @@ def welcome():
 def register():
     if request.method == 'POST':
         try:
-            age_group = request.form.get('age_group')
-            education = request.form.get('education')
-            cooking_frequency = request.form.get('cooking_frequency')
-            sustainability_awareness = int(request.form.get('sustainability_awareness', 3))
+            # Enhanced registration logika
+            email = request.form.get('email', '').strip().lower()
+            password = request.form.get('password', '')
+            display_name = request.form.get('display_name', '').strip()
             
-            version = get_user_version()
-            user_id = db.create_user(age_group, education, cooking_frequency, 
-                                   sustainability_awareness, version)
+            # Alapvető validáció
+            if not email or not password:
+                return render_template('register.html', error='Email és jelszó megadása kötelező')
             
+            if len(password) < 6:
+                return render_template('register.html', error='A jelszó legalább 6 karakter hosszú legyen')
+            
+            # User létrehozása
+            user_id = db.create_user(email, password, display_name)
+            if not user_id:
+                return render_template('register.html', error='Ez az email cím már regisztrált')
+            
+            # Profil adatok
+            profile_data = {
+                'age_group': request.form.get('age_group'),
+                'education': request.form.get('education'),
+                'cooking_frequency': request.form.get('cooking_frequency'),
+                'sustainability_awareness': int(request.form.get('sustainability_awareness', 3))
+            }
+            
+            # Profil mentése
+            db.create_user_profile(user_id, profile_data)
+            
+            # Session beállítása
             session['user_id'] = user_id
+            session['email'] = email
+            session['display_name'] = display_name or email.split('@')[0]
+            session['is_returning_user'] = False  # Új user
+            
+            # Verzió kiválasztása (megtartjuk az eredeti logikát)
+            version = get_user_version()
             session['version'] = version
+            
+            print(f"✅ New user registered: {email}")
             
             return redirect(url_for('user_study.instructions'))
             
@@ -474,6 +502,7 @@ def register():
             print(f"Registration error: {e}")
             return render_template('register.html', error='Regisztráció sikertelen')
     
+    # GET request - regisztráció form megjelenítése
     return render_template('register.html')
 
 @user_study_bp.route('/instructions')
