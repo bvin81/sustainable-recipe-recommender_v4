@@ -8,9 +8,10 @@ import os
 import random
 import pandas as pd
 import numpy as np
+import json
+import sqlite3  # ← FONTOS!
 from pathlib import Path
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
-import json
 
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
