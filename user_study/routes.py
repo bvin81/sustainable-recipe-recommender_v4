@@ -29,84 +29,200 @@ print(f"🔧 Data directory: {data_dir}")
 print(f"🔧 Project root: {project_root}")
 
 # =============================================================================
-# EGYSZERŰSÍTETT ADATBÁZIS - MEMÓRIÁBAN
+# Bővített adatbázis
 # =============================================================================
 
-class MemoryDatabase:
-    """Egyszerű memória-alapú adatbázis Heroku-hoz"""
+# LÉPÉS 1: Egyszerűsített Enhanced Database
+# Cseréld ki a MemoryDatabase osztályt erre:
+
+class EnhancedDatabase:
+    """Bővített adatbázis user auth + collaborative filtering alapokkal"""
     
     def __init__(self):
-        self.participants = []
-        self.interactions = []
-        self.questionnaires = []
-        self.next_user_id = 1
-        print("✅ Memory database initialized")
+        self.db_path = ":memory:"  # Heroku-kompatibilis
+        self._init_enhanced()
+        print("✅ Enhanced database initialized")
     
-    def create_user(self, age_group, education, cooking_frequency, sustainability_awareness, version):
-        user_id = self.next_user_id
-        self.next_user_id += 1
+    def _init_enhanced(self):
+        """Bővített adatbázis séma - egyszerűsített"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
         
-        user = {
-            'user_id': user_id,
-            'age_group': age_group,
-            'education': education,
-            'cooking_frequency': cooking_frequency,
-            'sustainability_awareness': sustainability_awareness,
-            'version': version,
-            'is_completed': False
-        }
-        self.participants.append(user)
-        return user_id
+        # 1. USERS tábla - főfiók adatok
+        conn.execute('''CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            display_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_active BOOLEAN DEFAULT 1
+        )''')
+        
+        # 2. USER_PROFILES tábla - egyszerűsített
+        conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id INTEGER PRIMARY KEY,
+            age_group TEXT,
+            education TEXT,
+            cooking_frequency TEXT,
+            sustainability_awareness INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        # 3. RECIPE_RATINGS tábla - collaborative filtering alapja  
+        conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
+            rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            recipe_id INTEGER,
+            rating INTEGER,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        # 4. QUESTIONNAIRE tábla - eredeti megtartása
+        conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
+            user_id INTEGER PRIMARY KEY,
+            system_usability INTEGER,
+            recommendation_quality INTEGER,
+            trust_level INTEGER,
+            explanation_clarity INTEGER,
+            sustainability_importance INTEGER,
+            overall_satisfaction INTEGER,
+            additional_comments TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        
+        conn.commit()
+        conn.close()
     
-    def log_interaction(self, user_id, recipe_id, rating, explanation_helpful, view_time):
-        interaction = {
-            'user_id': user_id,
-            'recipe_id': recipe_id,
-            'rating': rating,
-            'explanation_helpful': explanation_helpful,
-            'view_time_seconds': view_time
-        }
-        self.interactions.append(interaction)
+    # ALAPVETŐ USER MANAGEMENT
+    def create_user(self, email, password, display_name=None):
+        """Új user létrehozása"""
+        conn = sqlite3.connect(self.db_path)
+        
+        password_hash = self._hash_password(password)
+        
+        try:
+            cursor = conn.execute(
+                '''INSERT INTO users (email, password_hash, display_name) 
+                   VALUES (?, ?, ?)''',
+                (email, password_hash, display_name or email.split('@')[0])
+            )
+            user_id = cursor.lastrowid
+            conn.commit()
+            print(f"✅ User created: {email} (ID: {user_id})")
+            return user_id
+        except sqlite3.IntegrityError:
+            print(f"⚠️ User already exists: {email}")
+            return None
+        finally:
+            conn.close()
     
+    def authenticate_user(self, email, password):
+        """User bejelentkezés"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        user = conn.execute(
+            'SELECT * FROM users WHERE email = ? AND is_active = 1',
+            (email,)
+        ).fetchone()
+        
+        conn.close()
+        
+        if user and self._verify_password(password, user['password_hash']):
+            return dict(user)
+        
+        return None
+    
+    def create_user_profile(self, user_id, profile_data):
+        """User profil létrehozása"""
+        conn = sqlite3.connect(self.db_path)
+        
+        conn.execute('''INSERT OR REPLACE INTO user_profiles 
+            (user_id, age_group, education, cooking_frequency, sustainability_awareness)
+            VALUES (?, ?, ?, ?, ?)''',
+            (user_id, profile_data.get('age_group'), profile_data.get('education'),
+             profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
+        )
+        
+        conn.commit()
+        conn.close()
+    
+    # RECIPE RATING METHODS - collaborative filtering alapja
+    def log_interaction(self, user_id, recipe_id, rating, explanation_helpful=None, view_time=None):
+        """Recept értékelés mentése - visszafelé kompatibilis"""
+        conn = sqlite3.connect(self.db_path)
+        
+        conn.execute('''INSERT INTO recipe_ratings 
+            (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
+            (user_id, recipe_id, rating)
+        )
+        
+        conn.commit()
+        conn.close()
+    
+    def get_user_ratings(self, user_id):
+        """User értékelései collaborative filtering-hez"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        ratings = conn.execute(
+            'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
+            (user_id,)
+        ).fetchall()
+        
+        conn.close()
+        return [(r['recipe_id'], r['rating']) for r in ratings]
+    
+    # QUESTIONNAIRE - eredeti funkció megtartása
     def save_questionnaire(self, user_id, responses):
-        questionnaire = {'user_id': user_id, **responses}
-        self.questionnaires.append(questionnaire)
+        """Kérdőív mentése - visszafelé kompatibilis"""
+        conn = sqlite3.connect(self.db_path)
         
-        # User completed jelölése
-        for user in self.participants:
-            if user['user_id'] == user_id:
-                user['is_completed'] = True
-                break
+        conn.execute('''INSERT OR REPLACE INTO questionnaire 
+            (user_id, system_usability, recommendation_quality, trust_level,
+             explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (user_id, responses['system_usability'], responses['recommendation_quality'],
+             responses['trust_level'], responses['explanation_clarity'],
+             responses['sustainability_importance'], responses['overall_satisfaction'],
+             responses['additional_comments']))
+        
+        conn.commit()
+        conn.close()
     
     def get_stats(self):
-        total = len(self.participants)
-        completed = sum(1 for u in self.participants if u['is_completed'])
+        """Admin statisztikák - eredeti megtartása"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        # Összes user
+        result = conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
+        total = result['count'] if result else 0
+        
+        # Befejezett kérdőívek
+        result = conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
+        completed = result['count'] if result else 0
+        
+        conn.close()
         
         return {
             'total_participants': total,
             'completed_participants': completed,
             'completion_rate': completed / total if total > 0 else 0,
-            'avg_interactions_per_user': len(self.interactions) / total if total > 0 else 0,
+            'avg_interactions_per_user': 0,
             'version_distribution': []
         }
+    
+    # HELPER METHODS
+    def _hash_password(self, password):
+        """Egyszerű jelszó hash (termelésben bcrypt használandó!)"""
+        import hashlib
+        return hashlib.sha256(password.encode()).hexdigest()
+    
+    def _verify_password(self, password, password_hash):
+        """Jelszó ellenőrzés"""
+        return self._hash_password(password) == password_hash
 
-# =============================================================================
-# EGYSZERŰSÍTETT AJÁNLÓRENDSZER
-# =============================================================================
-
-# CSAK EZT A RÉSZT CSERÉLD KI az eredeti routes.py-ban:
-
-# ============================================================================= 
-# RÉGI SimpleRecommender osztály törlése (kb. 76-180. sor)
-# =============================================================================
-# class SimpleRecommender:      <- EZ KERÜL KI
-#     def __init__(self):       <- EGÉSZ OSZTÁLY TÖRLÉSE
-#     ... (teljes osztály)
-#     ... minden metódusával
-
-# =============================================================================
-# ÚJ HungarianCSVRecommender osztály berakása helyette
-# =============================================================================
 
 class HungarianJSONRecommender:
     """Magyar receptek JSON-ből - encoding problémák nélkül"""
@@ -317,7 +433,7 @@ class HungarianJSONRecommender:
 # GLOBÁLIS OBJEKTUMOK
 # =============================================================================
 
-db = MemoryDatabase()
+db = EnhancedDatabase()
 recommender = HungarianJSONRecommender()
 
 def get_user_version():
