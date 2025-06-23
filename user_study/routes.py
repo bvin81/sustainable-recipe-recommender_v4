@@ -54,12 +54,46 @@ class EnhancedDatabase:
     """Javított adatbázis user auth támogatással - KÖZÖS KAPCSOLATTAL"""
     
     def __init__(self):
-        self.db_path = ":memory:"  # Heroku-kompatibilis
-        # KULCS: Egy állandó kapcsolat létrehozása
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self._init_enhanced()
-        print("✅ Enhanced database initialized with persistent connection")
+            # HEROKU-KOMPATIBILIS PERSISTENT ADATBÁZIS
+            if os.environ.get('DYNO'):
+                # Heroku production: /tmp könyvtár (dyno restart-ig megmarad)
+                self.db_path = "/tmp/sustainable_recipes.db"
+                print(f"🌐 HEROKU: Using file database: {self.db_path}")
+            else:
+                # Local development: helyi fájl
+                self.db_path = "local_database.db"
+                print(f"💻 LOCAL: Using file database: {self.db_path}")
+            
+            # Ellenőrizzük hogy létezik-e már az adatbázis
+            db_exists = os.path.exists(self.db_path)
+            
+            # ÁLLANDÓ KAPCSOLAT LÉTREHOZÁSA
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            
+            if db_exists:
+                # Létező adatbázis - ellenőrizzük a tartalmát
+                print(f"📂 Existing database found: {self.db_path}")
+                try:
+                    user_count = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+                    print(f"👥 Existing users: {user_count['count'] if user_count else 0}")
+                except:
+                    print("🔧 Database corrupted, reinitializing...")
+                    self._init_enhanced()
+            else:
+                # Új adatbázis - táblák létrehozása
+                print(f"🆕 Creating new database: {self.db_path}")
+                self._init_enhanced()
+            
+            print("✅ Enhanced database initialized with PERSISTENT storage")
+            
+            # Fájl méret és jogosultságok ellenőrzése
+            try:
+                if os.path.exists(self.db_path):
+                    size = os.path.getsize(self.db_path)
+                    print(f"💾 Database file size: {size} bytes")
+            except Exception as e:
+                print(f"⚠️ Could not check database file: {e}")
     
     def _init_enhanced(self):
         """Javított adatbázis séma létrehozása EXTRA BIZTONSÁGGAL"""
