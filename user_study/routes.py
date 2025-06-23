@@ -430,7 +430,7 @@ class EnhancedDatabase:
             print(f"❌ Questionnaire save failed: {e}")
     
     def get_stats(self):
-        """Universal statistics WITH VERSION BREAKDOWN"""
+        """Universal statistics WITH VERSION BREAKDOWN - FIXED"""
         try:
             if self.db_type == 'postgresql':
                 conn = self._get_connection()
@@ -438,21 +438,23 @@ class EnhancedDatabase:
                 
                 # Összesített statisztikák
                 cursor.execute('SELECT COUNT(*) as count FROM users')
-                total = cursor.fetchone()['count']
+                total_result = cursor.fetchone()
+                total = total_result['count'] if total_result else 0
                 
                 cursor.execute('SELECT COUNT(*) as count FROM questionnaire')
-                completed = cursor.fetchone()['count']
+                completed_result = cursor.fetchone()
+                completed = completed_result['count'] if completed_result else 0
                 
                 # Verzió szerinti bontás
                 cursor.execute('''
                     SELECT 
-                        u.version,
+                        COALESCE(u.version, 'v1') as version,
                         COUNT(u.user_id) as registered,
                         COUNT(q.user_id) as completed
                     FROM users u
                     LEFT JOIN questionnaire q ON u.user_id = q.user_id
-                    GROUP BY u.version
-                    ORDER BY u.version
+                    GROUP BY COALESCE(u.version, 'v1')
+                    ORDER BY COALESCE(u.version, 'v1')
                 ''')
                 version_data = cursor.fetchall()
                 
@@ -470,21 +472,30 @@ class EnhancedDatabase:
                 # Verzió szerinti bontás
                 version_data = self.conn.execute('''
                     SELECT 
-                        u.version,
+                        COALESCE(u.version, 'v1') as version,
                         COUNT(u.user_id) as registered,
                         COUNT(q.user_id) as completed
                     FROM users u
                     LEFT JOIN questionnaire q ON u.user_id = q.user_id
-                    GROUP BY u.version
-                    ORDER BY u.version
+                    GROUP BY COALESCE(u.version, 'v1')
+                    ORDER BY COALESCE(u.version, 'v1')
                 ''').fetchall()
             
             # Verzió adatok formázása
             version_distribution = []
             for row in version_data:
-                version = row['version'] or 'v1'  # Fallback ha NULL
-                registered = row['registered']
-                completed = row['completed']
+                # UNIVERZÁLIS DICTIONARY ACCESS
+                if isinstance(row, dict):
+                    # PostgreSQL eredmény (dict)
+                    version = row.get('version', 'v1')
+                    registered = row.get('registered', 0)
+                    completed = row.get('completed', 0)
+                else:
+                    # SQLite eredmény (Row object)
+                    version = row['version'] if row['version'] else 'v1'
+                    registered = row['registered']
+                    completed = row['completed']
+                
                 completion_rate = (completed / registered * 100) if registered > 0 else 0
                 participation_rate = (registered / total * 100) if total > 0 else 0
                 
@@ -496,12 +507,12 @@ class EnhancedDatabase:
                     'participation_rate': round(participation_rate, 1)
                 })
             
-            print(f"📊 Version stats: {version_distribution}")
+            print(f"📊 Stats computed: {total} total, {completed} completed, {len(version_distribution)} versions")
             
             return {
                 'total_participants': total,
                 'completed_participants': completed,
-                'completion_rate': completed / total if total > 0 else 0,
+                'completion_rate': (completed / total * 100) if total > 0 else 0,
                 'avg_interactions_per_user': 0,
                 'version_distribution': version_distribution
             }
