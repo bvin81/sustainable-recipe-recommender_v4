@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
+import json
 
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
@@ -107,126 +108,105 @@ class MemoryDatabase:
 # ÚJ HungarianCSVRecommender osztály berakása helyette
 # =============================================================================
 
-class HungarianCSVRecommender:
-    """Magyar receptek CSV-ből a pontos oszlopnevek szerint"""
+class HungarianJSONRecommender:
+    """Magyar receptek JSON-ből - encoding problémák nélkül"""
     
     def __init__(self):
-        self.recipes_df = None
         self.recipes = []
-        self.load_hungarian_csv()
-        print(f"✅ Hungarian CSV Recommender initialized with {len(self.recipes)} recipes")
+        self.load_hungarian_json()
+        print(f"✅ Hungarian JSON Recommender initialized with {len(self.recipes)} recipes")
     
-   def load_hungarian_csv(self):
-    """Hungarian recipes CSV betöltése JAVÍTOTT parsing-gal"""
-    csv_paths = [
-        project_root / "hungarian_recipes_github.csv",
-        "hungarian_recipes_github.csv"
-    ]
+    def load_hungarian_json(self):
+        """JSON fájl betöltése - 100% megbízható"""
+        json_paths = [
+            "hungarian_recipes.json",
+            project_root / "hungarian_recipes.json",
+            data_dir / "hungarian_recipes.json"
+        ]
+        
+        for json_path in json_paths:
+            if Path(json_path).exists():
+                try:
+                    print(f"📊 Loading JSON from: {json_path}")
+                    
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        recipes_data = json.load(f)
+                    
+                    print(f"✅ JSON loaded! {len(recipes_data)} recipes")
+                    
+                    # Adatok feldolgozása
+                    self.process_json_recipes(recipes_data)
+                    return
+                    
+                except Exception as e:
+                    print(f"⚠️ Failed to load {json_path}: {e}")
+                    continue
+        
+        # Fallback
+        print("🔧 No JSON found, using sample recipes")
+        self.create_sample_recipes()
     
-    for csv_path in csv_paths:
-        if Path(csv_path).exists():
+    def process_json_recipes(self, recipes_data):
+        """JSON receptek feldolgozása"""
+        print(f"🔄 Processing {len(recipes_data)} recipes from JSON...")
+        
+        processed_recipes = []
+        
+        for recipe in recipes_data:
             try:
-                print(f"📊 Loading Hungarian CSV from: {csv_path}")
+                # Alapvető mezők biztosítása
+                processed_recipe = {
+                    'recipeid': recipe.get('recipeid', 0),
+                    'title': str(recipe.get('title', recipe.get('name', 'Névtelen recept'))),
+                    'ingredients': str(recipe.get('ingredients', '')),
+                    'instructions': str(recipe.get('instructions', '')),
+                    'category': str(recipe.get('category', 'Egyéb')),
+                    'images': self.fix_image_url(recipe.get('images', '')),
+                    'ESI': float(recipe.get('ESI', recipe.get('env_score', 70))),
+                    'HSI': float(recipe.get('HSI', recipe.get('nutri_score', 70))),
+                    'PPI': float(recipe.get('PPI', recipe.get('meal_score', 70)))
+                }
                 
-                # KULCS: Delimiter és encoding explicit megadása
-                self.recipes_df = pd.read_csv(
-                    csv_path, 
-                    encoding='iso-8859-1',  # Eredeti encoding
-                    delimiter=',',          # Explicit comma separator
-                    quotechar='"',          # Quote character
-                    escapechar='\\',        # Escape character
-                    on_bad_lines='skip'     # Skip bad lines
+                # Composite score számítása
+                processed_recipe['composite_score'] = round(
+                    processed_recipe['ESI'] * 0.4 + 
+                    processed_recipe['HSI'] * 0.4 + 
+                    processed_recipe['PPI'] * 0.2, 1
                 )
                 
-                print(f"✅ CSV loaded! Shape: {self.recipes_df.shape}")
-                print(f"📋 Columns: {list(self.recipes_df.columns)}")
-                
-                # Ellenőrzés hogy a oszlopok helyesek-e
-                if len(self.recipes_df.columns) >= 5:  # Legalább 5 oszlop kell
-                    self.process_hungarian_csv()
-                    return
-                else:
-                    print(f"❌ Wrong column count: {len(self.recipes_df.columns)}")
+                # Csak érvényes receptek
+                if processed_recipe['title'] and processed_recipe['ingredients']:
+                    processed_recipes.append(processed_recipe)
                     
             except Exception as e:
-                print(f"⚠️ Failed to load {csv_path}: {e}")
+                print(f"⚠️ Skipping invalid recipe: {e}")
                 continue
-    
-    # Fallback
-    print("🔧 No Hungarian CSV found, using sample recipes")
-    self.create_sample_recipes()
-    
-    def process_hungarian_csv(self):
-        """Magyar CSV feldolgozása a pontos oszlopok szerint"""
-        print(f"🇭🇺 Processing {len(self.recipes_df)} Hungarian recipes from CSV")
         
-        df = self.recipes_df.copy()
+        self.recipes = processed_recipes
+        print(f"✅ Successfully processed {len(self.recipes)} recipes")
         
-        # Oszlop mapping a pontos CSV struktúra szerint
-        # recipeid, env_score, nutri_score, meal_score, name, ingredients, instructions, category, images
-        column_mapping = {
-            'name': 'title',
-            'env_score': 'ESI',           # Environmental Score Index
-            'nutri_score': 'HSI',        # Health/Nutrition Score Index  
-            'meal_score': 'PPI',         # Popularity/Meal Score Index
-        }
-        
-        # Oszlopok átnevezése
-        for old_name, new_name in column_mapping.items():
-            if old_name in df.columns:
-                df[new_name] = df[old_name]
-        
-        # Score oszlopok ellenőrzése és konvertálása
-        score_columns = ['ESI', 'HSI', 'PPI']
-        for col in score_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(70)
-                # Skálázás 0-100-ra ha szükséges
-                if df[col].max() > 100:
-                    df[col] = (df[col] / df[col].max() * 100).round(1)
-        
-        # Composite score számítása
-        df['composite_score'] = (df['ESI'] * 0.4 + df['HSI'] * 0.4 + df['PPI'] * 0.2).round(1)
-        
-        # Adatok tisztítása
-        df = df.fillna('')
-        df = df[df['title'].astype(str).str.len() > 0]
-        df = df[df['ingredients'].astype(str).str.len() > 0]
-        
-        # Duplikátumok eltávolítása
-        df = df.drop_duplicates(subset=['title'], keep='first')
-        df = df.reset_index(drop=True)
-        df['recipeid'] = range(1, len(df) + 1)
-        
-        # Képek URL javítása
-        df['images'] = df['images'].apply(self.fix_image_url)
-        
-        # Lista formátumba konvertálás
-        self.recipes = df.to_dict('records')
-        
-        print(f"✅ Successfully processed {len(self.recipes)} Hungarian recipes")
-        
-        # Debug info
+        # Debug: első recept megjelenítése
         if self.recipes:
-            first_recipe = self.recipes[0]
-            print(f"📝 Sample: {first_recipe.get('title', 'N/A')}")
-            print(f"📊 Scores - ESI: {first_recipe.get('ESI', 0)}, HSI: {first_recipe.get('HSI', 0)}")
+            first = self.recipes[0]
+            print(f"📝 Sample: {first['title']}")
+            print(f"📊 Scores: ESI={first['ESI']}, HSI={first['HSI']}, PPI={first['PPI']}")
     
     def fix_image_url(self, image_url):
         """Kép URL javítása"""
-        if pd.isna(image_url) or str(image_url).strip() == '' or str(image_url) == 'nan':
-            return 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300'
+        if not image_url or str(image_url).strip() in ['', 'nan', 'null', 'None']:
+            return 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300&fit=crop'
         
         url = str(image_url).strip()
-        if url.startswith('http'):
+        if url.startswith('http') and len(url) > 10:
             return url
         
-        return 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400&h=300'
+        # Fallback placeholder
+        return 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400&h=300&fit=crop'
     
     def search_recipes(self, query, max_results=20):
         """Keresés magyar receptekben"""
         if not query.strip() or not self.recipes:
-            # Legjobb composite score szerint rendezés
+            # Ha nincs keresés, legjobb composite score szerint
             sorted_recipes = sorted(self.recipes, key=lambda x: x.get('composite_score', 0), reverse=True)
             return list(range(min(max_results, len(sorted_recipes))))
         
@@ -238,6 +218,7 @@ class HungarianCSVRecommender:
             title = recipe.get('title', '').lower()
             category = recipe.get('category', '').lower()
             
+            # Keresés címben, összetevőkben és kategóriában
             if any(term in ingredients or term in title or term in category for term in search_terms if term):
                 matching_recipes.append((idx, recipe))
         
@@ -249,23 +230,30 @@ class HungarianCSVRecommender:
         """Fő ajánlási algoritmus"""
         
         if not self.recipes:
+            print("❌ No recipes available")
             return []
+        
+        print(f"🔍 Getting recommendations: {len(self.recipes)} total recipes available")
         
         # Keresés vagy top recipes
         if search_query.strip():
             indices = self.search_recipes(search_query, max_results=20)
             candidates = [self.recipes[i] for i in indices[:n_recommendations]]
+            print(f"🔍 Search '{search_query}' found {len(candidates)} matches")
         else:
+            # Legjobb composite score-ú receptek
             sorted_recipes = sorted(self.recipes, key=lambda x: x.get('composite_score', 0), reverse=True)
             candidates = sorted_recipes[:n_recommendations]
+            print(f"🏆 Top {len(candidates)} recipes by score")
         
         if not candidates:
             candidates = self.recipes[:n_recommendations]
+            print(f"⚠️ Fallback: using first {len(candidates)} recipes")
         
-        # Deep copy
+        # Deep copy hogy ne módosítsuk az eredeti adatokat
         recommendations = [recipe.copy() for recipe in candidates]
         
-        # Verzió-specifikus információ
+        # Verzió-specifikus információ hozzáadása
         for rec in recommendations:
             if version == 'v1':
                 rec['show_scores'] = False
@@ -280,6 +268,7 @@ class HungarianCSVRecommender:
                 rec['show_explanation'] = True
                 rec['explanation'] = self.generate_explanation(rec, search_query)
         
+        print(f"✅ Returning {len(recommendations)} recommendations")
         return recommendations
     
     def generate_explanation(self, recipe, search_query=""):
@@ -318,7 +307,8 @@ class HungarianCSVRecommender:
                 'recipeid': 1, 'title': 'Gulyásleves',
                 'ingredients': 'marhahús, hagyma, paprika, paradicsom, burgonya',
                 'instructions': 'Hagyományos magyar gulyásleves...',
-                'category': 'Leves', 'images': 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400',
+                'category': 'Leves', 
+                'images': 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400',
                 'ESI': 45, 'HSI': 75, 'PPI': 85, 'composite_score': 68
             }
         ]
@@ -328,7 +318,7 @@ class HungarianCSVRecommender:
 # =============================================================================
 
 db = MemoryDatabase()
-recommender = HungarianCSVRecommender()
+recommender = HungarianJSONRecommender()
 
 def get_user_version():
     """A/B/C verzió kiválasztása"""
