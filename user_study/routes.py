@@ -6,11 +6,29 @@ Memória-alapú adatbázis + egyszerűsített logika
 import sqlite3  # ← FONTOS!
 import os
 import random
-import pandas as pd
-import numpy as np
 import json
 from pathlib import Path
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
+
+# Conditional imports with fallbacks
+try:
+    import pandas as pd
+    import numpy as np
+    print("✅ Scientific libraries loaded")
+except ImportError as e:
+    print(f"⚠️ Scientific libraries missing: {e}")
+    print("🔧 Using Python built-ins as fallback")
+    # Fallback - használjuk a Python built-in-eket
+    class MockPandas:
+        def read_csv(self, *args, **kwargs):
+            return []
+    pd = MockPandas()
+    
+    class MockNumpy:
+        def random(self):
+            import random
+            return random
+    np = MockNumpy()
 
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
