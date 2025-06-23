@@ -137,7 +137,7 @@
         </div>
         
         <div class="stat-card">
-            <div class="stat-number">{{ "%.1f"|format(stats.get('completion_rate', 0) * 100) }}%</div>
+            <div class="stat-number">{{ "%.1f"|format(stats.get('completion_rate', 0)) }}%</div>
             <div class="stat-label">Befejezési arány</div>
         </div>
         
@@ -393,7 +393,7 @@
        // Log page view for analytics
        console.log('Stats page loaded at:', new Date().toISOString());
        console.log('Current participants:', {{ stats.get('total_participants', 0) }});
-       console.log('Completion rate:', {{ stats.get('completion_rate', 0) * 100 }}%);
+       console.log('Completion rate:', {{ stats.get('completion_rate', 0) }}%);
    </script>
 </body>
 </html>
