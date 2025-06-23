@@ -504,6 +504,39 @@ def register():
     
     # GET request - regisztráció form megjelenítése
     return render_template('register.html')
+    
+# Login route hozzáadása a register után
+@user_study_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        
+        if not email or not password:
+            return render_template('login.html', error='Email és jelszó megadása kötelező', email=email)
+        
+        # User authentication
+        user = db.authenticate_user(email, password)
+        if user:
+            # Session setup
+            session['user_id'] = user['user_id']
+            session['email'] = user['email']
+            session['display_name'] = user['display_name']
+            session['is_returning_user'] = True
+            
+            print(f"✅ User logged in: {email}")
+            
+            # Redirect to study (később lehet dashboard)
+            return redirect(url_for('user_study.instructions'))
+        else:
+            return render_template('login.html', error='Hibás email vagy jelszó', email=email)
+    
+    return render_template('login.html')
+
+@user_study_bp.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('user_study.welcome'))
 
 @user_study_bp.route('/instructions')
 def instructions():
