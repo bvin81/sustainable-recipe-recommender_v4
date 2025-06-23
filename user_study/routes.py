@@ -329,49 +329,126 @@ class HungarianJSONRecommender:
         self.create_sample_recipes()
     
     def process_json_recipes(self, recipes_data):
-        """JSON receptek feldolgozása"""
-        print(f"🔄 Processing {len(recipes_data)} recipes from JSON...")
-        
-        processed_recipes = []
-        
-        for recipe in recipes_data:
-            try:
-                # Alapvető mezők biztosítása
-                processed_recipe = {
-                    'recipeid': recipe.get('recipeid', 0),
-                    'title': str(recipe.get('title', recipe.get('name', 'Névtelen recept'))),
-                    'ingredients': str(recipe.get('ingredients', '')),
-                    'instructions': str(recipe.get('instructions', '')),
-                    'category': str(recipe.get('category', 'Egyéb')),
-                    'images': self.fix_image_url(recipe.get('images', '')),
-                    'ESI': float(recipe.get('ESI', recipe.get('env_score', 70))),
-                    'HSI': float(recipe.get('HSI', recipe.get('nutri_score', 70))),
-                    'PPI': float(recipe.get('PPI', recipe.get('meal_score', 70)))
-                }
-                
-                # Composite score számítása
-                processed_recipe['composite_score'] = round(
-                    processed_recipe['ESI'] * 0.4 + 
-                    processed_recipe['HSI'] * 0.4 + 
-                    processed_recipe['PPI'] * 0.2, 1
-                )
-                
-                # Csak érvényes receptek
-                if processed_recipe['title'] and processed_recipe['ingredients']:
-                    processed_recipes.append(processed_recipe)
+            """JSON receptek feldolgozása TELJES NORMALIZÁLÁSSAL"""
+            print(f"🔄 Processing {len(recipes_data)} recipes from JSON...")
+            
+            processed_recipes = []
+            
+            # ELSŐ LÉPÉS: Nyers adatok összegyűjtése és min/max értékek meghatározása
+            raw_esi_values = []
+            raw_hsi_values = []
+            raw_ppi_values = []
+            
+            # Értékek gyűjtése normalizáláshoz
+            for recipe in recipes_data:
+                try:
+                    esi = float(recipe.get('ESI', recipe.get('env_score', 70)))
+                    hsi = float(recipe.get('HSI', recipe.get('nutri_score', 70)))
+                    ppi = float(recipe.get('PPI', recipe.get('meal_score', 70)))
                     
-            except Exception as e:
-                print(f"⚠️ Skipping invalid recipe: {e}")
-                continue
-        
-        self.recipes = processed_recipes
-        print(f"✅ Successfully processed {len(self.recipes)} recipes")
-        
-        # Debug: első recept megjelenítése
-        if self.recipes:
-            first = self.recipes[0]
-            print(f"📝 Sample: {first['title']}")
-            print(f"📊 Scores: ESI={first['ESI']}, HSI={first['HSI']}, PPI={first['PPI']}")
+                    raw_esi_values.append(esi)
+                    raw_hsi_values.append(hsi)
+                    raw_ppi_values.append(ppi)
+                except (ValueError, TypeError):
+                    continue
+            
+            # Min/Max értékek kiszámítása
+            esi_min, esi_max = min(raw_esi_values), max(raw_esi_values)
+            hsi_min, hsi_max = min(raw_hsi_values), max(raw_hsi_values)
+            ppi_min, ppi_max = min(raw_ppi_values), max(raw_ppi_values)
+            
+            print(f"📊 Score ranges:")
+            print(f"   ESI: {esi_min:.2f} - {esi_max:.2f}")
+            print(f"   HSI: {hsi_min:.2f} - {hsi_max:.2f}")
+            print(f"   PPI: {ppi_min:.2f} - {ppi_max:.2f}")
+            
+            # MÁSODIK LÉPÉS: Receptek feldolgozása normalizált értékekkel
+            for recipe in recipes_data:
+                try:
+                    # Alapvető mezők biztosítása
+                    raw_esi = float(recipe.get('ESI', recipe.get('env_score', 70)))
+                    raw_hsi = float(recipe.get('HSI', recipe.get('nutri_score', 70)))
+                    raw_ppi = float(recipe.get('PPI', recipe.get('meal_score', 70)))
+                    
+                    # NORMALIZÁLÁS 0-100 SKÁLÁRA: (x-min)/(max-min)*100
+                    def normalize_score(value, min_val, max_val):
+                        if max_val == min_val:  # Elkerüljük a nullával osztást
+                            return 50.0  # Középérték ha minden azonos
+                        return ((value - min_val) / (max_val - min_val)) * 100
+                    
+                    normalized_esi = normalize_score(raw_esi, esi_min, esi_max)
+                    normalized_hsi = normalize_score(raw_hsi, hsi_min, hsi_max)
+                    normalized_ppi = normalize_score(raw_ppi, ppi_min, ppi_max)
+                    
+                    processed_recipe = {
+                        'recipeid': recipe.get('recipeid', 0),
+                        'title': str(recipe.get('title', recipe.get('name', 'Névtelen recept'))),
+                        'ingredients': str(recipe.get('ingredients', '')),
+                        'instructions': str(recipe.get('instructions', '')),
+                        'category': str(recipe.get('category', 'Egyéb')),
+                        'images': self.fix_image_url(recipe.get('images', '')),
+                        # Normalizált pontszámok mentése
+                        'ESI': round(normalized_esi, 1),
+                        'HSI': round(normalized_hsi, 1),
+                        'PPI': round(normalized_ppi, 1),
+                        # Eredeti pontszámok debug céljából
+                        'raw_ESI': round(raw_esi, 1),
+                        'raw_HSI': round(raw_hsi, 1),
+                        'raw_PPI': round(raw_ppi, 1)
+                    }
+                    
+                    # KOMPOZIT SCORE SZÁMÍTÁSA - JAVÍTOTT VERZIÓ
+                    # Formula: (100 - normalized_ESI) * 0.4 + normalized_HSI * 0.4 + normalized_PPI * 0.2
+                    # Magyarázat: 
+                    # - ESI (Environmental Impact Score): alacsonyabb = jobb környezeti hatás -> (100-ESI)
+                    # - HSI (Health Score): magasabb = egészségesebb -> HSI
+                    # - PPI (Popularity/Meal Score): magasabb = népszerűbb/jobb étkezés -> PPI
+                    
+                    esi_inverted = 100 - normalized_esi  # Környezeti pontszám fordítása
+                    composite = (
+                        esi_inverted * 0.4 +           # Fordított környezeti (40%)
+                        normalized_hsi * 0.4 +         # Egészség (40%)
+                        normalized_ppi * 0.2           # Népszerűség/Étkezés (20%)
+                    )
+                    
+                    processed_recipe['composite_score'] = round(composite, 1)
+                    
+                    # Debug információ az első néhány recepthez
+                    if len(processed_recipes) < 3:
+                        print(f"🔍 Recipe: {processed_recipe['title'][:30]}...")
+                        print(f"   Raw scores: ESI={raw_esi:.1f}, HSI={raw_hsi:.1f}, PPI={raw_ppi:.1f}")
+                        print(f"   Normalized: ESI={normalized_esi:.1f}, HSI={normalized_hsi:.1f}, PPI={normalized_ppi:.1f}")
+                        print(f"   ESI inverted: {esi_inverted:.1f}")
+                        print(f"   Composite: {composite:.1f}")
+                        print(f"   Formula: ({esi_inverted:.1f}*0.4) + ({normalized_hsi:.1f}*0.4) + ({normalized_ppi:.1f}*0.2) = {composite:.1f}")
+                        print()
+                    
+                    # Csak érvényes receptek
+                    if processed_recipe['title'] and processed_recipe['ingredients']:
+                        processed_recipes.append(processed_recipe)
+                        
+                except Exception as e:
+                    print(f"⚠️ Skipping invalid recipe: {e}")
+                    continue
+            
+            self.recipes = processed_recipes
+            print(f"✅ Successfully processed {len(self.recipes)} recipes with normalized scores")
+            
+            # Összesített statisztikák
+            if self.recipes:
+                avg_composite = sum(r['composite_score'] for r in self.recipes) / len(self.recipes)
+                min_composite = min(r['composite_score'] for r in self.recipes)
+                max_composite = max(r['composite_score'] for r in self.recipes)
+                
+                print(f"📈 Composite score stats:")
+                print(f"   Average: {avg_composite:.1f}")
+                print(f"   Range: {min_composite:.1f} - {max_composite:.1f}")
+            
+            # Debug: első recept megjelenítése
+            if self.recipes:
+                first = self.recipes[0]
+                print(f"📝 Sample: {first['title']}")
+                print(f"📊 Final scores: ESI={first['ESI']}, HSI={first['HSI']}, PPI={first['PPI']}, Composite={first['composite_score']}")
     
     def fix_image_url(self, image_url):
         """Kép URL javítása"""
