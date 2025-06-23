@@ -1,2 +1,1 @@
-web: gunicorn app:app
-release: python setup_database.py
+web: gunicorn app:app --timeout 120
