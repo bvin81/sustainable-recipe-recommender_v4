@@ -116,42 +116,45 @@ class HungarianCSVRecommender:
         self.load_hungarian_csv()
         print(f"✅ Hungarian CSV Recommender initialized with {len(self.recipes)} recipes")
     
-    def load_hungarian_csv(self):
-        """Hungarian recipes CSV betöltése pontos oszlopnevek szerint"""
-        csv_paths = [
-            project_root / "hungarian_recipes_github.csv",
-            data_dir / "hungarian_recipes_github.csv", 
-            Path("hungarian_recipes_github.csv"),
-            data_dir / "processed_recipes.csv"
-        ]
-        
-        for csv_path in csv_paths:
-            if csv_path.exists():
-                try:
-                    print(f"📊 Loading Hungarian CSV from: {csv_path}")
+   def load_hungarian_csv(self):
+    """Hungarian recipes CSV betöltése JAVÍTOTT parsing-gal"""
+    csv_paths = [
+        project_root / "hungarian_recipes_github.csv",
+        "hungarian_recipes_github.csv"
+    ]
+    
+    for csv_path in csv_paths:
+        if Path(csv_path).exists():
+            try:
+                print(f"📊 Loading Hungarian CSV from: {csv_path}")
+                
+                # KULCS: Delimiter és encoding explicit megadása
+                self.recipes_df = pd.read_csv(
+                    csv_path, 
+                    encoding='iso-8859-1',  # Eredeti encoding
+                    delimiter=',',          # Explicit comma separator
+                    quotechar='"',          # Quote character
+                    escapechar='\\',        # Escape character
+                    on_bad_lines='skip'     # Skip bad lines
+                )
+                
+                print(f"✅ CSV loaded! Shape: {self.recipes_df.shape}")
+                print(f"📋 Columns: {list(self.recipes_df.columns)}")
+                
+                # Ellenőrzés hogy a oszlopok helyesek-e
+                if len(self.recipes_df.columns) >= 5:  # Legalább 5 oszlop kell
+                    self.process_hungarian_csv()
+                    return
+                else:
+                    print(f"❌ Wrong column count: {len(self.recipes_df.columns)}")
                     
-                    # Encoding próbálása
-                    for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
-                        try:
-                            self.recipes_df = pd.read_csv(csv_path, encoding=encoding)
-                            print(f"✅ Hungarian CSV loaded with {encoding} encoding")
-                            print(f"📊 Shape: {self.recipes_df.shape}")
-                            print(f"📋 Columns: {list(self.recipes_df.columns)}")
-                            break
-                        except UnicodeDecodeError:
-                            continue
-                    
-                    if self.recipes_df is not None:
-                        self.process_hungarian_csv()
-                        return
-                        
-                except Exception as e:
-                    print(f"⚠️ Failed to load {csv_path}: {e}")
-                    continue
-        
-        # Fallback
-        print("🔧 No Hungarian CSV found, using sample recipes")
-        self.create_sample_recipes()
+            except Exception as e:
+                print(f"⚠️ Failed to load {csv_path}: {e}")
+                continue
+    
+    # Fallback
+    print("🔧 No Hungarian CSV found, using sample recipes")
+    self.create_sample_recipes()
     
     def process_hungarian_csv(self):
         """Magyar CSV feldolgozása a pontos oszlopok szerint"""
