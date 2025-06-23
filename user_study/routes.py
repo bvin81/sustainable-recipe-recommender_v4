@@ -30,6 +30,15 @@ except ImportError as e:
             return random
     np = MockNumpy()
 
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    from urllib.parse import urlparse
+    POSTGRES_AVAILABLE = True
+except ImportError:
+    POSTGRES_AVAILABLE = False
+    print("⚠️ psycopg2 not available, falling back to SQLite")
+
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
 
@@ -51,286 +60,381 @@ print(f"🔧 Project root: {project_root}")
 # =============================================================================
 
 class EnhancedDatabase:
-    """Javított adatbázis user auth támogatással - KÖZÖS KAPCSOLATTAL"""
+    """Universal database class - PostgreSQL + SQLite support"""
     
     def __init__(self):
-            # HEROKU-KOMPATIBILIS PERSISTENT ADATBÁZIS
+        # PRODUCTION: PostgreSQL on Heroku
+        if os.environ.get('DATABASE_URL') and POSTGRES_AVAILABLE:
+            self.db_type = 'postgresql'
+            self.database_url = os.environ.get('DATABASE_URL')
+            self._init_postgresql()
+        # FALLBACK: File-based SQLite
+        else:
+            self.db_type = 'sqlite'
             if os.environ.get('DYNO'):
-                # Heroku production: /tmp könyvtár (dyno restart-ig megmarad)
                 self.db_path = "/tmp/sustainable_recipes.db"
-                print(f"🌐 HEROKU: Using file database: {self.db_path}")
+                print(f"🌐 HEROKU SQLite fallback: {self.db_path}")
             else:
-                # Local development: helyi fájl
                 self.db_path = "local_database.db"
-                print(f"💻 LOCAL: Using file database: {self.db_path}")
-            
-            # Ellenőrizzük hogy létezik-e már az adatbázis
-            db_exists = os.path.exists(self.db_path)
-            
-            # ÁLLANDÓ KAPCSOLAT LÉTREHOZÁSA
-            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            self.conn.row_factory = sqlite3.Row
-            
-            if db_exists:
-                # Létező adatbázis - ellenőrizzük a tartalmát
-                print(f"📂 Existing database found: {self.db_path}")
-                try:
-                    user_count = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
-                    print(f"👥 Existing users: {user_count['count'] if user_count else 0}")
-                except:
-                    print("🔧 Database corrupted, reinitializing...")
-                    self._init_enhanced()
-            else:
-                # Új adatbázis - táblák létrehozása
-                print(f"🆕 Creating new database: {self.db_path}")
-                self._init_enhanced()
-            
-            print("✅ Enhanced database initialized with PERSISTENT storage")
-            
-            # Fájl méret és jogosultságok ellenőrzése
-            try:
-                if os.path.exists(self.db_path):
-                    size = os.path.getsize(self.db_path)
-                    print(f"💾 Database file size: {size} bytes")
-            except Exception as e:
-                print(f"⚠️ Could not check database file: {e}")
+                print(f"💻 LOCAL SQLite: {self.db_path}")
+            self._init_sqlite()
+        
+        self._init_tables()
+        print(f"✅ Database initialized: {self.db_type}")
     
-    def _init_enhanced(self):
-        """Javított adatbázis séma létrehozása EXTRA BIZTONSÁGGAL"""
+    def _init_postgresql(self):
+        """PostgreSQL kapcsolat inicializálás"""
         try:
-            print("🔍 DEBUG: Creating users table...")
+            # Connection pool helyett egyszerű kapcsolat
+            parsed = urlparse(self.database_url)
+            self.pg_config = {
+                'host': parsed.hostname,
+                'port': parsed.port,
+                'database': parsed.path[1:],  # Remove leading '/'
+                'user': parsed.username,
+                'password': parsed.password,
+                'sslmode': 'require'
+            }
+            print(f"🐘 PostgreSQL connection to: {parsed.hostname}")
             
-            # EXPLICIT módon: először töröljük, majd létrehozzuk
-            self.conn.execute('DROP TABLE IF EXISTS users')
-            self.conn.execute('''CREATE TABLE users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                display_name TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_active BOOLEAN DEFAULT 1
-            )''')
-            print("✅ DEBUG: Users table FORCED creation")
-                
-            # 2. USER_PROFILES tábla
-            self.conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
-                user_id INTEGER PRIMARY KEY,
-                age_group TEXT,
-                education TEXT,
-                cooking_frequency TEXT,
-                sustainability_awareness INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            print("✅ DEBUG: User_profiles table created")
-            
-            # 3. RECIPE_RATINGS tábla
-            self.conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
-                rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                recipe_id INTEGER,
-                rating INTEGER,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            print("✅ DEBUG: Recipe_ratings table created")
-            
-            # 4. QUESTIONNAIRE tábla - eredeti megtartása
-            self.conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
-                user_id INTEGER PRIMARY KEY,
-                system_usability INTEGER,
-                recommendation_quality INTEGER,
-                trust_level INTEGER,
-                explanation_clarity INTEGER,
-                sustainability_importance INTEGER,
-                overall_satisfaction INTEGER,
-                additional_comments TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )''')
-            print("✅ DEBUG: Questionnaire table created")
-            
-            # Táblák ellenőrzése
-            tables = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            table_names = [t[0] for t in tables]
-            print(f"✅ DEBUG: Created tables: {table_names}")
-            
-            self.conn.commit()
+            # Test connection
+            conn = self._get_connection()
+            conn.close()
+            print("✅ PostgreSQL connection successful")
             
         except Exception as e:
-            print(f"❌ DEBUG: Database initialization failed: {e}")
-            import traceback
-            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+            print(f"❌ PostgreSQL connection failed: {e}")
+            print("🔄 Falling back to SQLite...")
+            self.db_type = 'sqlite'
+            self._init_sqlite()
     
-    # USER MANAGEMENT
-    def create_user(self, email, password, display_name=None):
-        """Javított user létrehozás KÖZÖS KAPCSOLATTAL"""
+    def _init_sqlite(self):
+        """SQLite kapcsolat inicializálás"""
+        db_exists = os.path.exists(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        
+        if db_exists:
+            try:
+                user_count = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+                print(f"👥 Existing SQLite users: {user_count['count'] if user_count else 0}")
+            except:
+                print("🔧 SQLite database needs initialization")
+    
+    def _get_connection(self):
+        """Database kapcsolat lekérése"""
+        if self.db_type == 'postgresql':
+            return psycopg2.connect(**self.pg_config, cursor_factory=RealDictCursor)
+        else:
+            return self.conn
+    
+    def _init_tables(self):
+        """Táblák létrehozása (PostgreSQL + SQLite kompatibilis)"""
         try:
-            # BIZTONSÁGI ELLENŐRZÉS: létezik-e a users tábla?
-            table_check = self.conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-            ).fetchone()
-            
-            if not table_check:
-                print("⚠️ DEBUG: Users table missing! Creating now...")
-                self._init_enhanced()  # Újrainicializálás
-            
-            password_hash = self._hash_password(password)
-            
-            print(f"🔍 DEBUG: Creating user {email}")
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 
-            cursor = self.conn.execute(
-                '''INSERT INTO users (email, password_hash, display_name) 
-                   VALUES (?, ?, ?)''',
-                (email, password_hash, display_name or email.split('@')[0])
-            )
-            user_id = cursor.lastrowid
-            self.conn.commit()
+                # PostgreSQL szintaxis
+                cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                    user_id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    display_name VARCHAR(255),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT TRUE
+                )''')
+                
+                cursor.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id INTEGER PRIMARY KEY,
+                    age_group VARCHAR(50),
+                    education VARCHAR(100),
+                    cooking_frequency VARCHAR(50),
+                    sustainability_awareness INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )''')
+                
+                cursor.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
+                    rating_id SERIAL PRIMARY KEY,
+                    user_id INTEGER,
+                    recipe_id INTEGER,
+                    rating INTEGER,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )''')
+                
+                cursor.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
+                    user_id INTEGER PRIMARY KEY,
+                    system_usability INTEGER,
+                    recommendation_quality INTEGER,
+                    trust_level INTEGER,
+                    explanation_clarity INTEGER,
+                    sustainability_importance INTEGER,
+                    overall_satisfaction INTEGER,
+                    additional_comments TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )''')
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                print("✅ PostgreSQL tables created")
+                
+            else:
+                # SQLite szintaxis (eredeti)
+                self.conn.execute('''CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1
+                )''')
+                
+                self.conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
+                    user_id INTEGER PRIMARY KEY,
+                    age_group TEXT,
+                    education TEXT,
+                    cooking_frequency TEXT,
+                    sustainability_awareness INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )''')
+                
+                self.conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
+                    rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    recipe_id INTEGER,
+                    rating INTEGER,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )''')
+                
+                self.conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
+                    user_id INTEGER PRIMARY KEY,
+                    system_usability INTEGER,
+                    recommendation_quality INTEGER,
+                    trust_level INTEGER,
+                    explanation_clarity INTEGER,
+                    sustainability_importance INTEGER,
+                    overall_satisfaction INTEGER,
+                    additional_comments TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )''')
+                
+                self.conn.commit()
+                print("✅ SQLite tables created")
+                
+        except Exception as e:
+            print(f"❌ Table creation failed: {e}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+    
+    def create_user(self, email, password, display_name=None):
+        """Universal user creation"""
+        try:
+            password_hash = self._hash_password(password)
+            display_name = display_name or email.split('@')[0]
             
-            print(f"✅ DEBUG: User created successfully: {email} (ID: {user_id})")
+            print(f"🔍 Creating user {email} in {self.db_type}")
+            
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    '''INSERT INTO users (email, password_hash, display_name) 
+                       VALUES (%s, %s, %s) RETURNING user_id''',
+                    (email, password_hash, display_name)
+                )
+                user_id = cursor.fetchone()['user_id']
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+            else:
+                cursor = self.conn.execute(
+                    '''INSERT INTO users (email, password_hash, display_name) 
+                       VALUES (?, ?, ?)''',
+                    (email, password_hash, display_name)
+                )
+                user_id = cursor.lastrowid
+                self.conn.commit()
+            
+            print(f"✅ User created: {email} (ID: {user_id})")
             return user_id
             
-        except sqlite3.IntegrityError as e:
-            print(f"⚠️ DEBUG: User already exists: {email} - {e}")
-            return None
         except Exception as e:
-            print(f"❌ DEBUG: User creation failed: {e}")
-            import traceback
-            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
-            return None
+            if "UNIQUE constraint" in str(e) or "duplicate key" in str(e):
+                print(f"⚠️ User already exists: {email}")
+                return None
+            else:
+                print(f"❌ User creation failed: {e}")
+                return None
     
     def authenticate_user(self, email, password):
-            """User bejelentkezés ENHANCED DEBUG-gal"""
-            try:
-                print(f"🔍 DEBUG: Authenticating user {email}")
+        """Universal user authentication"""
+        try:
+            print(f"🔍 Authenticating {email} in {self.db_type}")
+            
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
                 
-                # ADATBÁZIS ÁLLAPOT ELLENŐRZÉSE
-                try:
-                    # Táblák ellenőrzése
-                    tables = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-                    table_names = [t[0] for t in tables]
-                    print(f"🗃️ DEBUG: Available tables: {table_names}")
-                    
-                    # Users tábla tartalom ellenőrzése
-                    if 'users' in table_names:
-                        users_count = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
-                        print(f"👥 DEBUG: Total users in database: {users_count['count'] if users_count else 0}")
-                        
-                        # Az összes user email listázása (debug célra)
-                        all_users = self.conn.execute("SELECT email, created_at FROM users LIMIT 10").fetchall()
-                        if all_users:
-                            print(f"📧 DEBUG: Registered emails:")
-                            for user in all_users:
-                                print(f"   - {user['email']} (created: {user['created_at']})")
-                        else:
-                            print(f"❌ DEBUG: No users found in database!")
-                    else:
-                        print(f"❌ DEBUG: Users table does not exist!")
-                        
-                except Exception as db_error:
-                    print(f"❌ DEBUG: Database check failed: {db_error}")
+                cursor.execute(
+                    'SELECT * FROM users WHERE email = %s AND is_active = TRUE',
+                    (email,)
+                )
+                user = cursor.fetchone()
                 
-                # USER KERESÉS
+                cursor.close()
+                conn.close()
+                
+            else:
                 user = self.conn.execute(
                     'SELECT * FROM users WHERE email = ? AND is_active = 1',
                     (email,)
                 ).fetchone()
-                
-                if user:
-                    print(f"✅ DEBUG: User found in database: {user['email']}")
-                    print(f"🔑 DEBUG: User ID: {user['user_id']}, Display: {user['display_name']}")
-                    
-                    # Jelszó hash ellenőrzése
-                    stored_hash = user['password_hash']
-                    input_hash = self._hash_password(password)
-                    print(f"🔐 DEBUG: Stored hash: {stored_hash[:20]}...")
-                    print(f"🔐 DEBUG: Input hash:  {input_hash[:20]}...")
-                    
-                    if self._verify_password(password, stored_hash):
-                        print(f"✅ DEBUG: Password verified for {email}")
-                        return dict(user)
-                    else:
-                        print(f"❌ DEBUG: Password verification failed for {email}")
-                        print(f"🔐 DEBUG: Hash mismatch!")
-                else:
-                    print(f"❌ DEBUG: User not found: {email}")
-                    print(f"🔍 DEBUG: Searching for similar emails...")
-                    
-                    # Hasonló emailek keresése (typo detection)
-                    similar = self.conn.execute(
-                        "SELECT email FROM users WHERE email LIKE ? LIMIT 5",
-                        (f"%{email.split('@')[0]}%",)
-                    ).fetchall()
-                    
-                    if similar:
-                        print(f"📧 DEBUG: Similar emails found:")
-                        for sim in similar:
-                            print(f"   - {sim['email']}")
-                    else:
-                        print(f"📧 DEBUG: No similar emails found")
-                
+            
+            if user and self._verify_password(password, user['password_hash']):
+                print(f"✅ Authentication successful: {email}")
+                return dict(user)
+            else:
+                print(f"❌ Authentication failed: {email}")
                 return None
                 
-            except Exception as e:
-                print(f"❌ DEBUG: Authentication failed: {e}")
-                import traceback
-                print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
-                return None
+        except Exception as e:
+            print(f"❌ Authentication error: {e}")
+            return None
     
     def create_user_profile(self, user_id, profile_data):
-        """User profil létrehozása"""
+        """Universal profile creation"""
         try:
-            self.conn.execute('''INSERT OR REPLACE INTO user_profiles 
-                (user_id, age_group, education, cooking_frequency, sustainability_awareness)
-                VALUES (?, ?, ?, ?, ?)''',
-                (user_id, profile_data.get('age_group'), profile_data.get('education'),
-                 profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
-            )
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute('''INSERT INTO user_profiles 
+                    (user_id, age_group, education, cooking_frequency, sustainability_awareness)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                    age_group = EXCLUDED.age_group,
+                    education = EXCLUDED.education,
+                    cooking_frequency = EXCLUDED.cooking_frequency,
+                    sustainability_awareness = EXCLUDED.sustainability_awareness''',
+                    (user_id, profile_data.get('age_group'), profile_data.get('education'),
+                     profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
+                )
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+            else:
+                self.conn.execute('''INSERT OR REPLACE INTO user_profiles 
+                    (user_id, age_group, education, cooking_frequency, sustainability_awareness)
+                    VALUES (?, ?, ?, ?, ?)''',
+                    (user_id, profile_data.get('age_group'), profile_data.get('education'),
+                     profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
+                )
+                self.conn.commit()
             
-            self.conn.commit()
-            print(f"✅ DEBUG: Profile created for user {user_id}")
+            print(f"✅ Profile created for user {user_id}")
             
         except Exception as e:
-            print(f"❌ DEBUG: Profile creation failed: {e}")
+            print(f"❌ Profile creation failed: {e}")
     
-    # VISSZAFELÉ KOMPATIBILIS METHODS
     def log_interaction(self, user_id, recipe_id, rating, explanation_helpful=None, view_time=None):
-        """Recipe értékelés - visszafelé kompatibilis"""
+        """Universal interaction logging"""
         try:
-            self.conn.execute('''INSERT INTO recipe_ratings 
-                (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
-                (user_id, recipe_id, rating)
-            )
-            
-            self.conn.commit()
-            
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute('''INSERT INTO recipe_ratings 
+                    (user_id, recipe_id, rating) VALUES (%s, %s, %s)''',
+                    (user_id, recipe_id, rating)
+                )
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+            else:
+                self.conn.execute('''INSERT INTO recipe_ratings 
+                    (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
+                    (user_id, recipe_id, rating)
+                )
+                self.conn.commit()
+                
         except Exception as e:
-            print(f"❌ DEBUG: Rating log failed: {e}")
+            print(f"❌ Rating log failed: {e}")
     
     def save_questionnaire(self, user_id, responses):
-        """Kérdőív mentése - visszafelé kompatibilis"""
+        """Universal questionnaire saving"""
         try:
-            self.conn.execute('''INSERT OR REPLACE INTO questionnaire 
-                (user_id, system_usability, recommendation_quality, trust_level,
-                 explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                (user_id, responses['system_usability'], responses['recommendation_quality'],
-                 responses['trust_level'], responses['explanation_clarity'],
-                 responses['sustainability_importance'], responses['overall_satisfaction'],
-                 responses['additional_comments']))
-            
-            self.conn.commit()
-            
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute('''INSERT INTO questionnaire 
+                    (user_id, system_usability, recommendation_quality, trust_level,
+                     explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                    system_usability = EXCLUDED.system_usability,
+                    recommendation_quality = EXCLUDED.recommendation_quality,
+                    trust_level = EXCLUDED.trust_level,
+                    explanation_clarity = EXCLUDED.explanation_clarity,
+                    sustainability_importance = EXCLUDED.sustainability_importance,
+                    overall_satisfaction = EXCLUDED.overall_satisfaction,
+                    additional_comments = EXCLUDED.additional_comments''',
+                    (user_id, responses['system_usability'], responses['recommendation_quality'],
+                     responses['trust_level'], responses['explanation_clarity'],
+                     responses['sustainability_importance'], responses['overall_satisfaction'],
+                     responses['additional_comments']))
+                
+                conn.commit()
+                cursor.close()
+                conn.close()
+                
+            else:
+                self.conn.execute('''INSERT OR REPLACE INTO questionnaire 
+                    (user_id, system_usability, recommendation_quality, trust_level,
+                     explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (user_id, responses['system_usability'], responses['recommendation_quality'],
+                     responses['trust_level'], responses['explanation_clarity'],
+                     responses['sustainability_importance'], responses['overall_satisfaction'],
+                     responses['additional_comments']))
+                self.conn.commit()
+                
         except Exception as e:
-            print(f"❌ DEBUG: Questionnaire save failed: {e}")
+            print(f"❌ Questionnaire save failed: {e}")
     
     def get_stats(self):
-        """Admin statisztikák"""
+        """Universal statistics"""
         try:
-            # Összes user
-            result = self.conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
-            total = result['count'] if result else 0
-            
-            # Befejezett kérdőívek
-            result = self.conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
-            completed = result['count'] if result else 0
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute('SELECT COUNT(*) as count FROM users')
+                total = cursor.fetchone()['count']
+                
+                cursor.execute('SELECT COUNT(*) as count FROM questionnaire')
+                completed = cursor.fetchone()['count']
+                
+                cursor.close()
+                conn.close()
+                
+            else:
+                result = self.conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
+                total = result['count'] if result else 0
+                
+                result = self.conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
+                completed = result['count'] if result else 0
             
             return {
                 'total_participants': total,
@@ -341,7 +445,7 @@ class EnhancedDatabase:
             }
             
         except Exception as e:
-            print(f"❌ DEBUG: Stats failed: {e}")
+            print(f"❌ Stats failed: {e}")
             return {
                 'total_participants': 0,
                 'completed_participants': 0,
@@ -351,27 +455,43 @@ class EnhancedDatabase:
             }
     
     def get_user_ratings(self, user_id):
-        """User értékelései"""
+        """Universal user ratings"""
         try:
-            ratings = self.conn.execute(
-                'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
-                (user_id,)
-            ).fetchall()
-            
-            return [(r['recipe_id'], r['rating']) for r in ratings]
-            
+            if self.db_type == 'postgresql':
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute(
+                    'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = %s',
+                    (user_id,)
+                )
+                ratings = cursor.fetchall()
+                
+                cursor.close()
+                conn.close()
+                
+                return [(r['recipe_id'], r['rating']) for r in ratings]
+                
+            else:
+                ratings = self.conn.execute(
+                    'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
+                    (user_id,)
+                ).fetchall()
+                
+                return [(r['recipe_id'], r['rating']) for r in ratings]
+                
         except Exception as e:
-            print(f"❌ DEBUG: Get ratings failed: {e}")
+            print(f"❌ Get ratings failed: {e}")
             return []
     
     # HELPER METHODS
     def _hash_password(self, password):
-        """Egyszerű jelszó hash"""
+        """Password hashing"""
         import hashlib
         return hashlib.sha256(password.encode()).hexdigest()
     
     def _verify_password(self, password, password_hash):
-        """Jelszó ellenőrzés"""
+        """Password verification"""
         return self._hash_password(password) == password_hash
         
 class HungarianJSONRecommender:
