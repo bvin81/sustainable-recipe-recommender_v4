@@ -3,13 +3,12 @@
 Heroku-optimalizált user_study/routes.py
 Memória-alapú adatbázis + egyszerűsített logika
 """
-
+import sqlite3  # ← FONTOS!
 import os
 import random
 import pandas as pd
 import numpy as np
 import json
-import sqlite3  # ← FONTOS!
 from pathlib import Path
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 
