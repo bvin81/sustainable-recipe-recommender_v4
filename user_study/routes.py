@@ -93,79 +93,174 @@ class MemoryDatabase:
 # EGYSZERŰSÍTETT AJÁNLÓRENDSZER
 # =============================================================================
 
-class SimpleRecommender:
-    """Egyszerű, Heroku-kompatibilis ajánlórendszer"""
+# CSAK EZT A RÉSZT CSERÉLD KI az eredeti routes.py-ban:
+
+# ============================================================================= 
+# RÉGI SimpleRecommender osztály törlése (kb. 76-180. sor)
+# =============================================================================
+# class SimpleRecommender:      <- EZ KERÜL KI
+#     def __init__(self):       <- EGÉSZ OSZTÁLY TÖRLÉSE
+#     ... (teljes osztály)
+#     ... minden metódusával
+
+# =============================================================================
+# ÚJ HungarianCSVRecommender osztály berakása helyette
+# =============================================================================
+
+class HungarianCSVRecommender:
+    """Magyar receptek CSV-ből a pontos oszlopnevek szerint"""
     
     def __init__(self):
-        self.recipes = self._create_sample_recipes()
-        print(f"✅ Recommender initialized with {len(self.recipes)} recipes")
+        self.recipes_df = None
+        self.recipes = []
+        self.load_hungarian_csv()
+        print(f"✅ Hungarian CSV Recommender initialized with {len(self.recipes)} recipes")
     
-    def _create_sample_recipes(self):
-        """Hardcoded sample receptek Heroku-hoz"""
-        recipes = [
-            {
-                'recipeid': 1, 'title': 'Gulyásleves',
-                'ingredients': 'marhahús, hagyma, paprika, paradicsom, burgonya',
-                'instructions': 'Pirítsd meg a hagymát, add hozzá a húst, majd a zöldségeket. Főzd 1 órán át.',
-                'images': 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400',
-                'ESI': 45, 'HSI': 75, 'PPI': 85, 'composite_score': 68
-            },
-            {
-                'recipeid': 2, 'title': 'Vegetáriánus Lecsó',
-                'ingredients': 'paprika, paradicsom, hagyma, tojás',
-                'instructions': 'Pirítsd meg a hagymát, add hozzá a paprikát és paradicsomot. Keverj bele tojást.',
-                'images': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400',
-                'ESI': 85, 'HSI': 80, 'PPI': 70, 'composite_score': 79
-            },
-            {
-                'recipeid': 3, 'title': 'Halászlé',
-                'ingredients': 'ponty, csuka, hagyma, paradicsom, paprika',
-                'instructions': 'Főzd ki a halból a levest, szűrd le, majd add hozzá a fűszereket.',
-                'images': 'https://images.unsplash.com/photo-1544943910-4c1dc44aab44?w=400',
-                'ESI': 60, 'HSI': 85, 'PPI': 75, 'composite_score': 73
-            },
-            {
-                'recipeid': 4, 'title': 'Túrós Csusza',
-                'ingredients': 'széles metélt, túró, tejföl, szalonna',
-                'instructions': 'Főzd meg a tésztát, keverd össze túróval és tejföllel.',
-                'images': 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400',
-                'ESI': 55, 'HSI': 65, 'PPI': 80, 'composite_score': 67
-            },
-            {
-                'recipeid': 5, 'title': 'Gombapaprikás',
-                'ingredients': 'gomba, hagyma, paprika, tejföl',
-                'instructions': 'Pirítsd meg a gombát hagymával, add hozzá a paprikát és tejfölt.',
-                'images': 'https://images.unsplash.com/photo-1565299507177-b0ac66763828?w=400',
-                'ESI': 90, 'HSI': 70, 'PPI': 65, 'composite_score': 75
-            }
+    def load_hungarian_csv(self):
+        """Hungarian recipes CSV betöltése pontos oszlopnevek szerint"""
+        csv_paths = [
+            project_root / "hungarian_recipes_github.csv",
+            data_dir / "hungarian_recipes_github.csv", 
+            Path("hungarian_recipes_github.csv"),
+            data_dir / "processed_recipes.csv"
         ]
-        return recipes
+        
+        for csv_path in csv_paths:
+            if csv_path.exists():
+                try:
+                    print(f"📊 Loading Hungarian CSV from: {csv_path}")
+                    
+                    # Encoding próbálása
+                    for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                        try:
+                            self.recipes_df = pd.read_csv(csv_path, encoding=encoding)
+                            print(f"✅ Hungarian CSV loaded with {encoding} encoding")
+                            print(f"📊 Shape: {self.recipes_df.shape}")
+                            print(f"📋 Columns: {list(self.recipes_df.columns)}")
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    
+                    if self.recipes_df is not None:
+                        self.process_hungarian_csv()
+                        return
+                        
+                except Exception as e:
+                    print(f"⚠️ Failed to load {csv_path}: {e}")
+                    continue
+        
+        # Fallback
+        print("🔧 No Hungarian CSV found, using sample recipes")
+        self.create_sample_recipes()
     
-    def search_recipes(self, query, max_results=5):
-        """Egyszerű keresés"""
-        if not query.strip():
-            return list(range(len(self.recipes)))
+    def process_hungarian_csv(self):
+        """Magyar CSV feldolgozása a pontos oszlopok szerint"""
+        print(f"🇭🇺 Processing {len(self.recipes_df)} Hungarian recipes from CSV")
+        
+        df = self.recipes_df.copy()
+        
+        # Oszlop mapping a pontos CSV struktúra szerint
+        # recipeid, env_score, nutri_score, meal_score, name, ingredients, instructions, category, images
+        column_mapping = {
+            'name': 'title',
+            'env_score': 'ESI',           # Environmental Score Index
+            'nutri_score': 'HSI',        # Health/Nutrition Score Index  
+            'meal_score': 'PPI',         # Popularity/Meal Score Index
+        }
+        
+        # Oszlopok átnevezése
+        for old_name, new_name in column_mapping.items():
+            if old_name in df.columns:
+                df[new_name] = df[old_name]
+        
+        # Score oszlopok ellenőrzése és konvertálása
+        score_columns = ['ESI', 'HSI', 'PPI']
+        for col in score_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(70)
+                # Skálázás 0-100-ra ha szükséges
+                if df[col].max() > 100:
+                    df[col] = (df[col] / df[col].max() * 100).round(1)
+        
+        # Composite score számítása
+        df['composite_score'] = (df['ESI'] * 0.4 + df['HSI'] * 0.4 + df['PPI'] * 0.2).round(1)
+        
+        # Adatok tisztítása
+        df = df.fillna('')
+        df = df[df['title'].astype(str).str.len() > 0]
+        df = df[df['ingredients'].astype(str).str.len() > 0]
+        
+        # Duplikátumok eltávolítása
+        df = df.drop_duplicates(subset=['title'], keep='first')
+        df = df.reset_index(drop=True)
+        df['recipeid'] = range(1, len(df) + 1)
+        
+        # Képek URL javítása
+        df['images'] = df['images'].apply(self.fix_image_url)
+        
+        # Lista formátumba konvertálás
+        self.recipes = df.to_dict('records')
+        
+        print(f"✅ Successfully processed {len(self.recipes)} Hungarian recipes")
+        
+        # Debug info
+        if self.recipes:
+            first_recipe = self.recipes[0]
+            print(f"📝 Sample: {first_recipe.get('title', 'N/A')}")
+            print(f"📊 Scores - ESI: {first_recipe.get('ESI', 0)}, HSI: {first_recipe.get('HSI', 0)}")
+    
+    def fix_image_url(self, image_url):
+        """Kép URL javítása"""
+        if pd.isna(image_url) or str(image_url).strip() == '' or str(image_url) == 'nan':
+            return 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300'
+        
+        url = str(image_url).strip()
+        if url.startswith('http'):
+            return url
+        
+        return 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400&h=300'
+    
+    def search_recipes(self, query, max_results=20):
+        """Keresés magyar receptekben"""
+        if not query.strip() or not self.recipes:
+            # Legjobb composite score szerint rendezés
+            sorted_recipes = sorted(self.recipes, key=lambda x: x.get('composite_score', 0), reverse=True)
+            return list(range(min(max_results, len(sorted_recipes))))
         
         search_terms = [term.strip().lower() for term in query.split(',')]
-        matching_indices = []
+        matching_recipes = []
         
         for idx, recipe in enumerate(self.recipes):
-            ingredients = recipe['ingredients'].lower()
-            if any(term in ingredients for term in search_terms if term):
-                matching_indices.append(idx)
+            ingredients = recipe.get('ingredients', '').lower()
+            title = recipe.get('title', '').lower()
+            category = recipe.get('category', '').lower()
+            
+            if any(term in ingredients or term in title or term in category for term in search_terms if term):
+                matching_recipes.append((idx, recipe))
         
-        return matching_indices[:max_results]
+        # Rendezés composite score szerint
+        matching_recipes.sort(key=lambda x: x[1].get('composite_score', 0), reverse=True)
+        return [idx for idx, recipe in matching_recipes[:max_results]]
     
     def get_recommendations(self, version='v1', search_query="", n_recommendations=5):
         """Fő ajánlási algoritmus"""
         
-        # Keresés vagy véletlenszerű
-        if search_query.strip():
-            indices = self.search_recipes(search_query, n_recommendations)
-        else:
-            indices = list(range(min(n_recommendations, len(self.recipes))))
+        if not self.recipes:
+            return []
         
-        recommendations = [self.recipes[i].copy() for i in indices]
+        # Keresés vagy top recipes
+        if search_query.strip():
+            indices = self.search_recipes(search_query, max_results=20)
+            candidates = [self.recipes[i] for i in indices[:n_recommendations]]
+        else:
+            sorted_recipes = sorted(self.recipes, key=lambda x: x.get('composite_score', 0), reverse=True)
+            candidates = sorted_recipes[:n_recommendations]
+        
+        if not candidates:
+            candidates = self.recipes[:n_recommendations]
+        
+        # Deep copy
+        recommendations = [recipe.copy() for recipe in candidates]
         
         # Verzió-specifikus információ
         for rec in recommendations:
@@ -175,21 +270,62 @@ class SimpleRecommender:
                 rec['explanation'] = ""
             elif version == 'v2':
                 rec['show_scores'] = True
-                rec['show_explanation'] = False
+                rec['show_explanation'] = False  
                 rec['explanation'] = ""
             elif version == 'v3':
                 rec['show_scores'] = True
                 rec['show_explanation'] = True
-                rec['explanation'] = f"Ezt a receptet {rec['composite_score']}/100 pontszám alapján ajánljuk. 🌱 Környezetbarát és egészséges választás!"
+                rec['explanation'] = self.generate_explanation(rec, search_query)
         
         return recommendations
+    
+    def generate_explanation(self, recipe, search_query=""):
+        """Magyarázat generálás v3 verzióhoz"""
+        composite = recipe.get('composite_score', 70)
+        esi = recipe.get('ESI', 70)
+        hsi = recipe.get('HSI', 70)
+        category = recipe.get('category', '')
+        
+        explanation = f"🎯 Ezt a receptet {composite:.1f}/100 összpontszám alapján ajánljuk. "
+        
+        if esi >= 80:
+            explanation += "🌱 Kiváló környezeti értékeléssel! "
+        elif esi >= 60:
+            explanation += "🌿 Jó környezeti értékeléssel. "
+        else:
+            explanation += "🔸 Közepes környezeti hatással. "
+            
+        if hsi >= 80:
+            explanation += "💚 Kiváló tápanyag-értékkel. "
+        elif hsi >= 60:
+            explanation += "⚖️ Kiegyensúlyozott összetevőkkel. "
+        
+        if category:
+            explanation += f"🏷️ Kategória: {category}. "
+        
+        if search_query.strip():
+            explanation += f"✨ Illeszkedik a '{search_query}' kereséshez."
+        
+        return explanation
+    
+    def create_sample_recipes(self):
+        """Fallback sample receptek"""
+        self.recipes = [
+            {
+                'recipeid': 1, 'title': 'Gulyásleves',
+                'ingredients': 'marhahús, hagyma, paprika, paradicsom, burgonya',
+                'instructions': 'Hagyományos magyar gulyásleves...',
+                'category': 'Leves', 'images': 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400',
+                'ESI': 45, 'HSI': 75, 'PPI': 85, 'composite_score': 68
+            }
+        ]
 
 # =============================================================================
 # GLOBÁLIS OBJEKTUMOK
 # =============================================================================
 
 db = MemoryDatabase()
-recommender = SimpleRecommender()
+recommender = HungarianCSVRecommender()
 
 def get_user_version():
     """A/B/C verzió kiválasztása"""
