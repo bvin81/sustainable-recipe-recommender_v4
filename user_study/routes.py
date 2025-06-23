@@ -165,18 +165,29 @@ class EnhancedDatabase:
     def authenticate_user(self, email, password):
         """User bejelentkezés"""
         try:
-            user = self.conn.execute(
-                'SELECT * FROM users WHERE email = ? AND is_active = 1',
-                (email,)
+            print(f"🔍 DEBUG: Authenticating user {email}")
+        
+            user = self.conn.execute(  # <- JAVÍTÁS: self.conn használata!
+            'SELECT * FROM users WHERE email = ? AND is_active = 1',
+            (email,)
             ).fetchone()
-            
-            if user and self._verify_password(password, user['password_hash']):
-                return dict(user)
-            
+        
+            if user:
+                print(f"✅ DEBUG: User found in database: {user['email']}")
+                if self._verify_password(password, user['password_hash']):
+                    print(f"✅ DEBUG: Password verified for {email}")
+                    return dict(user)
+                else:
+                    print(f"❌ DEBUG: Password verification failed for {email}")
+            else:
+                print(f"❌ DEBUG: User not found: {email}")
+        
             return None
-            
+        
         except Exception as e:
             print(f"❌ DEBUG: Authentication failed: {e}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             return None
     
     def create_user_profile(self, user_id, profile_data):
