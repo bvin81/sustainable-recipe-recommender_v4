@@ -38,6 +38,11 @@ try:
 except ImportError:
     POSTGRES_AVAILABLE = False
     print("⚠️ psycopg2 not available, falling back to SQLite")
+from flask import send_file, make_response
+import csv
+import io
+import json
+from datetime import datetime
 
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
@@ -1073,20 +1078,73 @@ def admin_stats():
 
 @user_study_bp.route('/admin/export/csv')
 def export_csv():
+    """CSV export a tanulmány adatairól"""
     try:
         stats = db.get_stats()
-        # CSV generálás logika
-        return send_file(csv_file, as_attachment=True, download_name='study_data.csv')
+        
+        # CSV buffer létrehozása
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header
+        writer.writerow([
+            'Export Date', 'Total Participants', 'Completed Participants', 
+            'Completion Rate', 'Version', 'Registered', 'Completed', 
+            'Version Completion Rate', 'Participation Rate'
+        ])
+        
+        export_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Verzió szerinti adatok
+        for version_data in stats.get('version_distribution', []):
+            writer.writerow([
+                export_date,
+                stats.get('total_participants', 0),
+                stats.get('completed_participants', 0), 
+                f"{stats.get('completion_rate', 0):.1f}%",
+                version_data.get('version', ''),
+                version_data.get('registered', 0),
+                version_data.get('completed', 0),
+                f"{version_data.get('completion_rate', 0):.1f}%",
+                f"{version_data.get('participation_rate', 0):.1f}%"
+            ])
+        
+        # Response készítése
+        output.seek(0)
+        csv_data = output.getvalue()
+        output.close()
+        
+        response = make_response(csv_data)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=study_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+        
     except Exception as e:
-        return f"Export error: {e}", 500
+        return f"CSV Export error: {e}", 500
 
 @user_study_bp.route('/admin/export/json')
 def export_json():
+    """JSON export a tanulmány adatairól"""
     try:
         stats = db.get_stats()
-        return jsonify(stats)
+        
+        # Export metadata hozzáadása
+        export_data = {
+            'export_date': datetime.now().isoformat(),
+            'export_version': '1.0',
+            'study_name': 'Sustainable Recipe Recommender Study',
+            'data': stats
+        }
+        
+        response = make_response(json.dumps(export_data, indent=2, ensure_ascii=False))
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename=study_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        
+        return response
+        
     except Exception as e:
-        return f"Export error: {e}", 500
+        return f"JSON Export error: {e}", 500
 
 # Export
 __all__ = ['user_study_bp']
