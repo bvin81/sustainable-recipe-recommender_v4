@@ -247,7 +247,7 @@ class EnhancedDatabase:
             print(f"❌ Traceback: {traceback.format_exc()}")
     
     def create_user(self, email, password, display_name=None, version='v1'):
-        """Universal user creation WITH VERSION TRACKING"""
+        """Universal user creation WITH VERSION TRACKING - FIXED"""
         try:
             password_hash = self._hash_password(password)
             display_name = display_name or email.split('@')[0]
@@ -263,7 +263,8 @@ class EnhancedDatabase:
                        VALUES (%s, %s, %s, %s) RETURNING user_id''',
                     (email, password_hash, display_name, version)
                 )
-                user_id = cursor.fetchone()['user_id']
+                result = cursor.fetchone()
+                user_id = result['user_id'] if result else None
                 
                 conn.commit()
                 cursor.close()
@@ -287,6 +288,8 @@ class EnhancedDatabase:
                 return None
             else:
                 print(f"❌ User creation failed: {e}")
+                import traceback
+                print(f"❌ Traceback: {traceback.format_exc()}")
                 return None
     
     def authenticate_user(self, email, password):
@@ -430,22 +433,26 @@ class EnhancedDatabase:
             print(f"❌ Questionnaire save failed: {e}")
     
     def get_stats(self):
-        """Universal statistics WITH VERSION BREAKDOWN - FIXED"""
+        """Universal statistics WITH VERSION BREAKDOWN - COMPLETE FIX"""
         try:
+            print(f"🔍 Getting stats using {self.db_type}")
+            
             if self.db_type == 'postgresql':
                 conn = self._get_connection()
                 cursor = conn.cursor()
                 
-                # Összesített statisztikák
+                # Összesített statisztikák - POSTGRESQL
                 cursor.execute('SELECT COUNT(*) as count FROM users')
                 total_result = cursor.fetchone()
                 total = total_result['count'] if total_result else 0
+                print(f"📊 PostgreSQL total users: {total}")
                 
                 cursor.execute('SELECT COUNT(*) as count FROM questionnaire')
                 completed_result = cursor.fetchone()
                 completed = completed_result['count'] if completed_result else 0
+                print(f"📊 PostgreSQL completed questionnaires: {completed}")
                 
-                # Verzió szerinti bontás
+                # Verzió szerinti bontás - POSTGRESQL
                 cursor.execute('''
                     SELECT 
                         COALESCE(u.version, 'v1') as version,
@@ -456,21 +463,46 @@ class EnhancedDatabase:
                     GROUP BY COALESCE(u.version, 'v1')
                     ORDER BY COALESCE(u.version, 'v1')
                 ''')
-                version_data = cursor.fetchall()
+                version_results = cursor.fetchall()
+                print(f"📊 PostgreSQL version query returned {len(version_results)} rows")
                 
                 cursor.close()
                 conn.close()
                 
+                # PostgreSQL eredmények feldolgozása
+                version_distribution = []
+                for row in version_results:
+                    print(f"🔍 Processing PostgreSQL row: {dict(row)}")
+                    # PostgreSQL eredmény = RealDictRow (dict-like)
+                    version = row['version'] if row['version'] else 'v1'
+                    registered = row['registered']
+                    completed = row['completed']
+                    
+                    completion_rate = (completed / registered * 100) if registered > 0 else 0
+                    participation_rate = (registered / total * 100) if total > 0 else 0
+                    
+                    version_distribution.append({
+                        'version': version,
+                        'registered': registered,
+                        'completed': completed,
+                        'completion_rate': round(completion_rate, 1),
+                        'participation_rate': round(participation_rate, 1)
+                    })
+                
             else:
                 # SQLite lekérdezések
+                print("🔍 Using SQLite queries")
+                
                 result = self.conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
                 total = result['count'] if result else 0
+                print(f"📊 SQLite total users: {total}")
                 
                 result = self.conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
                 completed = result['count'] if result else 0
+                print(f"📊 SQLite completed questionnaires: {completed}")
                 
-                # Verzió szerinti bontás
-                version_data = self.conn.execute('''
+                # Verzió szerinti bontás - SQLITE
+                version_results = self.conn.execute('''
                     SELECT 
                         COALESCE(u.version, 'v1') as version,
                         COUNT(u.user_id) as registered,
@@ -480,42 +512,40 @@ class EnhancedDatabase:
                     GROUP BY COALESCE(u.version, 'v1')
                     ORDER BY COALESCE(u.version, 'v1')
                 ''').fetchall()
-            
-            # Verzió adatok formázása
-            version_distribution = []
-            for row in version_data:
-                # UNIVERZÁLIS DICTIONARY ACCESS
-                if isinstance(row, dict):
-                    # PostgreSQL eredmény (dict)
-                    version = row.get('version', 'v1')
-                    registered = row.get('registered', 0)
-                    completed = row.get('completed', 0)
-                else:
-                    # SQLite eredmény (Row object)
+                print(f"📊 SQLite version query returned {len(version_results)} rows")
+                
+                # SQLite eredmények feldolgozása
+                version_distribution = []
+                for row in version_results:
+                    print(f"🔍 Processing SQLite row: {dict(row)}")
+                    # SQLite eredmény = Row object
                     version = row['version'] if row['version'] else 'v1'
                     registered = row['registered']
                     completed = row['completed']
-                
-                completion_rate = (completed / registered * 100) if registered > 0 else 0
-                participation_rate = (registered / total * 100) if total > 0 else 0
-                
-                version_distribution.append({
-                    'version': version,
-                    'registered': registered,
-                    'completed': completed,
-                    'completion_rate': round(completion_rate, 1),
-                    'participation_rate': round(participation_rate, 1)
-                })
+                    
+                    completion_rate = (completed / registered * 100) if registered > 0 else 0
+                    participation_rate = (registered / total * 100) if total > 0 else 0
+                    
+                    version_distribution.append({
+                        'version': version,
+                        'registered': registered,
+                        'completed': completed,
+                        'completion_rate': round(completion_rate, 1),
+                        'participation_rate': round(participation_rate, 1)
+                    })
             
-            print(f"📊 Stats computed: {total} total, {completed} completed, {len(version_distribution)} versions")
+            completion_rate = (completed / total * 100) if total > 0 else 0
             
-            return {
+            result = {
                 'total_participants': total,
                 'completed_participants': completed,
-                'completion_rate': (completed / total * 100) if total > 0 else 0,
+                'completion_rate': round(completion_rate, 1),
                 'avg_interactions_per_user': 0,
                 'version_distribution': version_distribution
             }
+            
+            print(f"📊 Final stats result: {result}")
+            return result
             
         except Exception as e:
             print(f"❌ Stats failed: {e}")
