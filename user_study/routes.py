@@ -51,24 +51,24 @@ print(f"🔧 Project root: {project_root}")
 # =============================================================================
 
 class EnhancedDatabase:
-    """Javított adatbázis user auth támogatással"""
+    """Javított adatbázis user auth támogatással - KÖZÖS KAPCSOLATTAL"""
     
     def __init__(self):
         self.db_path = ":memory:"  # Heroku-kompatibilis
+        # KULCS: Egy állandó kapcsolat létrehozása
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
         self._init_enhanced()
-        print("✅ Enhanced database initialized")
+        print("✅ Enhanced database initialized with persistent connection")
     
     def _init_enhanced(self):
         """Javított adatbázis séma létrehozása EXTRA BIZTONSÁGGAL"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            
             print("🔍 DEBUG: Creating users table...")
             
             # EXPLICIT módon: először töröljük, majd létrehozzuk
-            conn.execute('DROP TABLE IF EXISTS users')
-            conn.execute('''CREATE TABLE users (
+            self.conn.execute('DROP TABLE IF EXISTS users')
+            self.conn.execute('''CREATE TABLE users (
                 user_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
@@ -79,7 +79,7 @@ class EnhancedDatabase:
             print("✅ DEBUG: Users table FORCED creation")
                 
             # 2. USER_PROFILES tábla
-            conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS user_profiles (
                 user_id INTEGER PRIMARY KEY,
                 age_group TEXT,
                 education TEXT,
@@ -90,7 +90,7 @@ class EnhancedDatabase:
             print("✅ DEBUG: User_profiles table created")
             
             # 3. RECIPE_RATINGS tábla
-            conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS recipe_ratings (
                 rating_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 recipe_id INTEGER,
@@ -100,7 +100,7 @@ class EnhancedDatabase:
             print("✅ DEBUG: Recipe_ratings table created")
             
             # 4. QUESTIONNAIRE tábla - eredeti megtartása
-            conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
+            self.conn.execute('''CREATE TABLE IF NOT EXISTS questionnaire (
                 user_id INTEGER PRIMARY KEY,
                 system_usability INTEGER,
                 recommendation_quality INTEGER,
@@ -114,12 +114,11 @@ class EnhancedDatabase:
             print("✅ DEBUG: Questionnaire table created")
             
             # Táblák ellenőrzése
-            tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            tables = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             table_names = [t[0] for t in tables]
             print(f"✅ DEBUG: Created tables: {table_names}")
             
-            conn.commit()
-            conn.close()
+            self.conn.commit()
             
         except Exception as e:
             print(f"❌ DEBUG: Database initialization failed: {e}")
@@ -128,33 +127,28 @@ class EnhancedDatabase:
     
     # USER MANAGEMENT
     def create_user(self, email, password, display_name=None):
-        """Javított user létrehozás TÁBLA ELLENŐRZÉSSEL"""
+        """Javított user létrehozás KÖZÖS KAPCSOLATTAL"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            
             # BIZTONSÁGI ELLENŐRZÉS: létezik-e a users tábla?
-            table_check = conn.execute(
+            table_check = self.conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
             ).fetchone()
             
             if not table_check:
                 print("⚠️ DEBUG: Users table missing! Creating now...")
-                conn.close()  # Zárjuk le előbb
                 self._init_enhanced()  # Újrainicializálás
-                conn = sqlite3.connect(self.db_path)  # Újra nyitjuk
             
             password_hash = self._hash_password(password)
             
             print(f"🔍 DEBUG: Creating user {email}")
                 
-            cursor = conn.execute(
+            cursor = self.conn.execute(
                 '''INSERT INTO users (email, password_hash, display_name) 
                    VALUES (?, ?, ?)''',
                 (email, password_hash, display_name or email.split('@')[0])
             )
             user_id = cursor.lastrowid
-            conn.commit()
-            conn.close()
+            self.conn.commit()
             
             print(f"✅ DEBUG: User created successfully: {email} (ID: {user_id})")
             return user_id
@@ -171,15 +165,10 @@ class EnhancedDatabase:
     def authenticate_user(self, email, password):
         """User bejelentkezés"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            
-            user = conn.execute(
+            user = self.conn.execute(
                 'SELECT * FROM users WHERE email = ? AND is_active = 1',
                 (email,)
             ).fetchone()
-            
-            conn.close()
             
             if user and self._verify_password(password, user['password_hash']):
                 return dict(user)
@@ -193,17 +182,14 @@ class EnhancedDatabase:
     def create_user_profile(self, user_id, profile_data):
         """User profil létrehozása"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            
-            conn.execute('''INSERT OR REPLACE INTO user_profiles 
+            self.conn.execute('''INSERT OR REPLACE INTO user_profiles 
                 (user_id, age_group, education, cooking_frequency, sustainability_awareness)
                 VALUES (?, ?, ?, ?, ?)''',
                 (user_id, profile_data.get('age_group'), profile_data.get('education'),
                  profile_data.get('cooking_frequency'), profile_data.get('sustainability_awareness'))
             )
             
-            conn.commit()
-            conn.close()
+            self.conn.commit()
             print(f"✅ DEBUG: Profile created for user {user_id}")
             
         except Exception as e:
@@ -213,15 +199,12 @@ class EnhancedDatabase:
     def log_interaction(self, user_id, recipe_id, rating, explanation_helpful=None, view_time=None):
         """Recipe értékelés - visszafelé kompatibilis"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            
-            conn.execute('''INSERT INTO recipe_ratings 
+            self.conn.execute('''INSERT INTO recipe_ratings 
                 (user_id, recipe_id, rating) VALUES (?, ?, ?)''',
                 (user_id, recipe_id, rating)
             )
             
-            conn.commit()
-            conn.close()
+            self.conn.commit()
             
         except Exception as e:
             print(f"❌ DEBUG: Rating log failed: {e}")
@@ -229,9 +212,7 @@ class EnhancedDatabase:
     def save_questionnaire(self, user_id, responses):
         """Kérdőív mentése - visszafelé kompatibilis"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            
-            conn.execute('''INSERT OR REPLACE INTO questionnaire 
+            self.conn.execute('''INSERT OR REPLACE INTO questionnaire 
                 (user_id, system_usability, recommendation_quality, trust_level,
                  explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
@@ -240,8 +221,7 @@ class EnhancedDatabase:
                  responses['sustainability_importance'], responses['overall_satisfaction'],
                  responses['additional_comments']))
             
-            conn.commit()
-            conn.close()
+            self.conn.commit()
             
         except Exception as e:
             print(f"❌ DEBUG: Questionnaire save failed: {e}")
@@ -249,18 +229,13 @@ class EnhancedDatabase:
     def get_stats(self):
         """Admin statisztikák"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            
             # Összes user
-            result = conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
+            result = self.conn.execute('SELECT COUNT(*) as count FROM users').fetchone()
             total = result['count'] if result else 0
             
             # Befejezett kérdőívek
-            result = conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
+            result = self.conn.execute('SELECT COUNT(*) as count FROM questionnaire').fetchone()
             completed = result['count'] if result else 0
-            
-            conn.close()
             
             return {
                 'total_participants': total,
@@ -283,15 +258,11 @@ class EnhancedDatabase:
     def get_user_ratings(self, user_id):
         """User értékelései"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            
-            ratings = conn.execute(
+            ratings = self.conn.execute(
                 'SELECT recipe_id, rating FROM recipe_ratings WHERE user_id = ?',
                 (user_id,)
             ).fetchall()
             
-            conn.close()
             return [(r['recipe_id'], r['rating']) for r in ratings]
             
         except Exception as e:
@@ -307,6 +278,7 @@ class EnhancedDatabase:
     def _verify_password(self, password, password_hash):
         """Jelszó ellenőrzés"""
         return self._hash_password(password) == password_hash
+        
 class HungarianJSONRecommender:
     """Magyar receptek JSON-ből - encoding problémák nélkül"""
     
