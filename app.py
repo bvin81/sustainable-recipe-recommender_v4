@@ -23,56 +23,24 @@ def create_app():
     print(f"Working directory: {os.getcwd()}")
     
     # User study blueprint regisztráció (hibakezeléssel)
-
     blueprint_loaded = False
     try:
         print("📦 Attempting to import user_study...")
-        
-        # Dependency check ELŐTT
-        print("🔍 Checking dependencies...")
-        try:
-            import pandas
-            print(f"✅ pandas {pandas.__version__}")
-        except ImportError:
-            print("⚠️ pandas missing - installing fallback")
-            # Fallback nélküli import
-        
-        try:
-            import numpy
-            print(f"✅ numpy {numpy.__version__}")
-        except ImportError:
-            print("⚠️ numpy missing - using python built-ins")
-        
-        # Most már importáljuk a blueprint-et
         from user_study.routes import user_study_bp
         app.register_blueprint(user_study_bp)
         blueprint_loaded = True
         print("✅ User study routes registered successfully")
-        
     except ImportError as e:
         print(f"⚠️ User study import failed: {e}")
-        print(f"🔍 Trying to import with error details...")
-        import traceback
         print(f"Traceback: {traceback.format_exc()}")
-        
-        # Próbáljuk meg a fallback importot
-        try:
-            print("🔧 Attempting fallback import...")
-            import sys
-            sys.path.append(os.path.join(os.path.dirname(__file__), 'user_study'))
-            from routes import user_study_bp
-            app.register_blueprint(user_study_bp)
-            blueprint_loaded = True
-            print("✅ Fallback import successful!")
-        except Exception as fallback_error:
-            print(f"❌ Fallback import also failed: {fallback_error}")
-        
-except Exception as e:
-    print(f"❌ Unexpected error during import: {e}")
-    import traceback
-    print(f"Traceback: {traceback.format_exc()}")
-
-        
+    except Exception as e:
+        print(f"❌ Unexpected error during import: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+    
+    # Fallback route-ok ha a blueprint nem töltődött be
+    if not blueprint_loaded:
+        print("🔧 Registering fallback routes...")
+        register_fallback_routes(app)
     
     # Alapvető route-ok
     @app.route('/')
