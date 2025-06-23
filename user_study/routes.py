@@ -163,32 +163,82 @@ class EnhancedDatabase:
             return None
     
     def authenticate_user(self, email, password):
-        """User bejelentkezés"""
-        try:
-            print(f"🔍 DEBUG: Authenticating user {email}")
-        
-            user = self.conn.execute(  # <- JAVÍTÁS: self.conn használata!
-            'SELECT * FROM users WHERE email = ? AND is_active = 1',
-            (email,)
-            ).fetchone()
-        
-            if user:
-                print(f"✅ DEBUG: User found in database: {user['email']}")
-                if self._verify_password(password, user['password_hash']):
-                    print(f"✅ DEBUG: Password verified for {email}")
-                    return dict(user)
+            """User bejelentkezés ENHANCED DEBUG-gal"""
+            try:
+                print(f"🔍 DEBUG: Authenticating user {email}")
+                
+                # ADATBÁZIS ÁLLAPOT ELLENŐRZÉSE
+                try:
+                    # Táblák ellenőrzése
+                    tables = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+                    table_names = [t[0] for t in tables]
+                    print(f"🗃️ DEBUG: Available tables: {table_names}")
+                    
+                    # Users tábla tartalom ellenőrzése
+                    if 'users' in table_names:
+                        users_count = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
+                        print(f"👥 DEBUG: Total users in database: {users_count['count'] if users_count else 0}")
+                        
+                        # Az összes user email listázása (debug célra)
+                        all_users = self.conn.execute("SELECT email, created_at FROM users LIMIT 10").fetchall()
+                        if all_users:
+                            print(f"📧 DEBUG: Registered emails:")
+                            for user in all_users:
+                                print(f"   - {user['email']} (created: {user['created_at']})")
+                        else:
+                            print(f"❌ DEBUG: No users found in database!")
+                    else:
+                        print(f"❌ DEBUG: Users table does not exist!")
+                        
+                except Exception as db_error:
+                    print(f"❌ DEBUG: Database check failed: {db_error}")
+                
+                # USER KERESÉS
+                user = self.conn.execute(
+                    'SELECT * FROM users WHERE email = ? AND is_active = 1',
+                    (email,)
+                ).fetchone()
+                
+                if user:
+                    print(f"✅ DEBUG: User found in database: {user['email']}")
+                    print(f"🔑 DEBUG: User ID: {user['user_id']}, Display: {user['display_name']}")
+                    
+                    # Jelszó hash ellenőrzése
+                    stored_hash = user['password_hash']
+                    input_hash = self._hash_password(password)
+                    print(f"🔐 DEBUG: Stored hash: {stored_hash[:20]}...")
+                    print(f"🔐 DEBUG: Input hash:  {input_hash[:20]}...")
+                    
+                    if self._verify_password(password, stored_hash):
+                        print(f"✅ DEBUG: Password verified for {email}")
+                        return dict(user)
+                    else:
+                        print(f"❌ DEBUG: Password verification failed for {email}")
+                        print(f"🔐 DEBUG: Hash mismatch!")
                 else:
-                    print(f"❌ DEBUG: Password verification failed for {email}")
-            else:
-                print(f"❌ DEBUG: User not found: {email}")
-        
-            return None
-        
-        except Exception as e:
-            print(f"❌ DEBUG: Authentication failed: {e}")
-            import traceback
-            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
-            return None
+                    print(f"❌ DEBUG: User not found: {email}")
+                    print(f"🔍 DEBUG: Searching for similar emails...")
+                    
+                    # Hasonló emailek keresése (typo detection)
+                    similar = self.conn.execute(
+                        "SELECT email FROM users WHERE email LIKE ? LIMIT 5",
+                        (f"%{email.split('@')[0]}%",)
+                    ).fetchall()
+                    
+                    if similar:
+                        print(f"📧 DEBUG: Similar emails found:")
+                        for sim in similar:
+                            print(f"   - {sim['email']}")
+                    else:
+                        print(f"📧 DEBUG: No similar emails found")
+                
+                return None
+                
+            except Exception as e:
+                print(f"❌ DEBUG: Authentication failed: {e}")
+                import traceback
+                print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+                return None
     
     def create_user_profile(self, user_id, profile_data):
         """User profil létrehozása"""
