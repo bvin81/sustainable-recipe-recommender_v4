@@ -1163,6 +1163,9 @@ def admin_stats():
                     <a href="/admin/export/json" class="export-btn">
                         🔗 JSON Export
                     </a>
+                    <a href="/admin/export/simple_csv" class="export-btn" style="background: #28a745;">
+                        ✅ Egyszerű CSV (Backup)
+                    </a>
                 </div>
                 
                 <!-- Navigáció -->
