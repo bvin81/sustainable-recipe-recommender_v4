@@ -747,10 +747,82 @@ try:
         
         print(f"📊 Found {len(raw_recipes)} raw recipes in JSON file")
         
-        # Convert to enhanced system format
+        # Convert to enhanced system format with DOCUMENTED NORMALIZATION
         recipes_data = []
+        
+        # ELSŐ LÉPÉS: MinMaxScaler alkalmazása (dokumentáció szerint)
+        import numpy as np
+        
+        # Collect all raw values for MinMaxScaler
+        all_recipes_df = []
         for recipe in raw_recipes:
-            # Convert Hungarian recipe format to enhanced format
+            try:
+                all_recipes_df.append({
+                    'ESI': float(recipe.get('ESI', 70)),
+                    'HSI': float(recipe.get('HSI', 70)),
+                    'PPI': float(recipe.get('PPI', 70)),
+                    'recipe_data': recipe
+                })
+            except (ValueError, TypeError):
+                continue
+        
+        if not all_recipes_df:
+            print("❌ No valid recipes for normalization")
+            return
+        
+        # Convert to arrays for MinMaxScaler
+        scores_array = np.array([[r['ESI'], r['HSI'], r['PPI']] for r in all_recipes_df])
+        
+        # Apply MinMaxScaler (0-1 range)
+        try:
+            from sklearn.preprocessing import MinMaxScaler
+            scaler = MinMaxScaler()
+            normalized_scores = scaler.fit_transform(scores_array)
+            print("✅ Using sklearn MinMaxScaler for normalization")
+        except ImportError:
+            print("⚠️ sklearn not available, using manual min-max normalization")
+            # Fallback manual normalization
+            normalized_scores = []
+            for col in range(scores_array.shape[1]):
+                col_data = scores_array[:, col]
+                min_val, max_val = np.min(col_data), np.max(col_data)
+                if max_val - min_val > 0:
+                    normalized_col = (col_data - min_val) / (max_val - min_val)
+                else:
+                    normalized_col = np.full_like(col_data, 0.5)
+                normalized_scores.append(normalized_col)
+            normalized_scores = np.array(normalized_scores).T
+        
+        print(f"📊 Normalization ranges:")
+        print(f"   Original ESI: {scores_array[:, 0].min():.1f} - {scores_array[:, 0].max():.1f}")
+        print(f"   Original HSI: {scores_array[:, 1].min():.1f} - {scores_array[:, 1].max():.1f}")
+        print(f"   Original PPI: {scores_array[:, 2].min():.1f} - {scores_array[:, 2].max():.1f}")
+        
+        # MÁSODIK LÉPÉS: Receptek feldolgozása dokumentált composite score-ral
+        for i, recipe_info in enumerate(all_recipes_df):
+            recipe = recipe_info['recipe_data']
+            
+            # Normalized scores (0-1 range from MinMaxScaler)
+            esi_norm = normalized_scores[i, 0]
+            hsi_norm = normalized_scores[i, 1]  
+            ppi_norm = normalized_scores[i, 2]
+            
+            # Convert to 0-100 scale for display
+            esi_display = round(esi_norm * 100, 1)
+            hsi_display = round(hsi_norm * 100, 1)
+            ppi_display = round(ppi_norm * 100, 1)
+            
+            # DOKUMENTÁLT COMPOSITE SCORE FORMULA
+            # Original: w_ppi=0.4, w_hsi=0.4, w_esi=0.2 (from documentation)
+            # Alternative: w_hsi=0.4, w_esi=0.4, w_ppi=0.2 (from routes.py)
+            
+            # Using the ROUTES.PY version (which inverts ESI for environment-friendliness)
+            composite_score = (
+                (1 - esi_norm) * 0.4 +  # ESI inverted (lower ESI = better environment)
+                hsi_norm * 0.4 +        # HSI (higher = better health)
+                ppi_norm * 0.2          # PPI (higher = better preference)
+            ) * 100  # Scale to 0-100
+            
             enhanced_recipe = {
                 'id': str(recipe.get('recipeid', len(recipes_data) + 1)),
                 'recipeid': recipe.get('recipeid'),
@@ -758,17 +830,26 @@ try:
                 'title': recipe.get('title', 'Névtelen Recept'),
                 'ingredients': recipe.get('ingredients', ''),
                 'instructions': recipe.get('instructions', ''),
-                'HSI': float(recipe.get('HSI', 70)),
-                'ESI': float(recipe.get('ESI', 70)), 
-                'PPI': float(recipe.get('PPI', 70)),
+                
+                # Normalized scores for display (0-100)
+                'HSI': hsi_display,
+                'ESI': esi_display,  # Note: this is normalized, not inverted
+                'PPI': ppi_display,
+                
+                # Store normalized 0-1 values for calculations
+                'HSI_norm': hsi_norm,
+                'ESI_norm': esi_norm,
+                'PPI_norm': ppi_norm,
+                
+                # Original raw scores for reference
+                'HSI_original': float(recipe.get('HSI', 70)),
+                'ESI_original': float(recipe.get('ESI', 70)),
+                'PPI_original': float(recipe.get('PPI', 70)),
+                
                 'category': recipe.get('category', 'Egyéb'),
                 'images': recipe.get('images', ''),
-                # Calculate composite score
-                'composite_score': (
-                    float(recipe.get('HSI', 70)) + 
-                    float(recipe.get('ESI', 70)) + 
-                    float(recipe.get('PPI', 70))
-                ) / 3,
+                'composite_score': round(composite_score, 1),
+                
                 # Enhanced compatibility
                 'show_scores': False,
                 'show_explanation': False,
@@ -776,8 +857,11 @@ try:
             }
             recipes_data.append(enhanced_recipe)
         
-        print(f"✅ Successfully converted {len(recipes_data)} Hungarian recipes")
-        print(f"📊 Sample recipe: {recipes_data[0]['name']} (HSI: {recipes_data[0]['HSI']}, ESI: {recipes_data[0]['ESI']}, PPI: {recipes_data[0]['PPI']})")
+        print(f"✅ Successfully normalized {len(recipes_data)} recipes using documented method")
+        print(f"📊 Sample normalized recipe: {recipes_data[0]['name']}")
+        print(f"   Display scores: HSI={recipes_data[0]['HSI']}, ESI={recipes_data[0]['ESI']}, PPI={recipes_data[0]['PPI']}")
+        print(f"   Composite: {recipes_data[0]['composite_score']}")
+        print(f"   Formula: (1-{recipes_data[0]['ESI_norm']:.3f})*0.4 + {recipes_data[0]['HSI_norm']:.3f}*0.4 + {recipes_data[0]['PPI_norm']:.3f}*0.2 = {recipes_data[0]['composite_score']}")
         
     except FileNotFoundError:
         print(f"⚠️ hungarian_recipes.json not found at {json_path}")
