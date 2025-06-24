@@ -141,21 +141,21 @@
 </head>
 <body>
     <div class="container">
-        <h1>📊 Admin Statisztikák</h1>
+        <h1>📊 Statisztikák</h1>
         
         <!-- Alapstatisztikák -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-number">{{ stats.total_participants }}</div>
-                <div class="stat-label">Összes Résztvevő</div>
+                <div class="stat-label">Összes résztvevő</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{{ stats.completed_participants }}</div>
-                <div class="stat-label">Befejezett Tanulmány</div>
+                <div class="stat-label">Befejezett tanulmány</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{{ "%.1f"|format(stats.completion_rate * 100) }}%</div>
-                <div class="stat-label">Befejezési Arány</div>
+                <div class="stat-label">Befejezési arány</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number">{{ stats.get('avg_interactions_per_user', 0)|round(1) }}</div>
