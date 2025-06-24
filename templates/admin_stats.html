@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Statisztikák - Sustainable Recipe Recommender</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 40px;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        .export-section {
+            background: #ecf0f1;
+            padding: 25px;
+            border-radius: 10px;
+            margin: 30px 0;
+        }
+        .export-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .export-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        .export-card h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .export-button {
+            display: inline-block;
+            background: #3498db;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+        .export-button:hover {
+            background: #2980b9;
+        }
+        .export-button.statistical {
+            background: #e74c3c;
+        }
+        .export-button.statistical:hover {
+            background: #c0392b;
+        }
+        .export-button.spss {
+            background: #f39c12;
+        }
+        .export-button.spss:hover {
+            background: #e67e22;
+        }
+        .export-button.pandas {
+            background: #9b59b6;
+        }
+        .export-button.pandas:hover {
+            background: #8e44ad;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #34495e;
+            color: white;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .version-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .version-v1 { background: #e8f4fd; color: #1976d2; }
+        .version-v2 { background: #fff3e0; color: #f57c00; }
+        .version-v3 { background: #e8f5e8; color: #388e3c; }
+        .description {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Admin Statisztikák</h1>
+        
+        <!-- Alapstatisztikák -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.total_participants }}</div>
+                <div class="stat-label">Összes Résztvevő</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.completed_participants }}</div>
+                <div class="stat-label">Befejezett Tanulmány</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ "%.1f"|format(stats.completion_rate * 100) }}%</div>
+                <div class="stat-label">Befejezési Arány</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ stats.get('avg_interactions_per_user', 0)|round(1) }}</div>
+                <div class="stat-label">Átlag Interakció/Fő</div>
+            </div>
+        </div>
+
+        <!-- Verzió Eloszlás -->
+        <h2>🧪 A/B/C Testing Eloszlás</h2>
+        {% if stats.version_distribution %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Verzió</th>
+                    <th>Résztvevők</th>
+                    <th>Befejezett</th>
+                    <th>Befejezési Arány</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for version in stats.version_distribution %}
+                <tr>
+                    <td>
+                        <span class="version-badge version-{{ version.version }}">
+                            {{ version.version.upper() }}
+                        </span>
+                    </td>
+                    <td>{{ version.count }}</td>
+                    <td>{{ version.completed }}</td>
+                    <td>{{ "%.1f"|format((version.completed / version.count * 100) if version.count > 0 else 0) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Export Szekció -->
+        <div class="export-section">
+            <h2>📁 Adatexport Lehetőségek</h2>
+            
+            <div class="export-grid">
+                <!-- Statisztikai Elemzés Export -->
+                <div class="export-card">
+                    <h3>🔬 Statisztikai Elemzés</h3>
+                    <div class="description">
+                        Strukturált CSV formátum statisztikai elemzéshez. Minden sor egy felhasználó-recept interakciót képvisel.
+                        Tartalmazza: demográfiai adatok, csoport, recept pontszámok, értékelések.
+                    </div>
+                    <a href="{{ url_for('user_study.export_statistical_csv') }}" class="export-button statistical">
+                        📊 Statisztikai CSV Letöltés
+                    </a>
+
+                    <a href="/admin/export/postgresql_csv" class="export-button" style="background: #28a745;">
+                        🐘 PostgreSQL CSV Export
+                    </a>
+                </div>
+
+                <!-- SPSS Export -->
+                <div class="export-card">
+                    <h3>📈 SPSS Elemzés</h3>
+                    <div class="description">
+                        SPSS-re optimalizált numerikus kódolással. Minden kategorikus változó számmá alakítva.
+                        Ideális ANOVA, regresszió és faktorelemzéshez.
+                    </div>
+                    <a href="{{ url_for('user_study.export_spss_ready') }}" class="export-button spss">
+                        🔢 SPSS CSV Letöltés
+                    </a>
+                </div>
+
+                <!-- Pandas Export -->
+                <div class="export-card">
+                    <h3>🐍 Python/Pandas</h3>
+                    <div class="description">
+                        JSON formátum Python pandas DataFrame-ekhez. Strukturált adatok metadata-val és kódolási táblázatokkal.
+                    </div>
+                    <a href="{{ url_for('user_study.export_pandas_ready') }}" class="export-button pandas">
+                        🔍 Pandas JSON Letöltés
+                    </a>
+                </div>
+
+                <!-- Eredeti Export -->
+                <div class="export-card">
+                    <h3>📋 Alap Export</h3>
+                    <div class="description">
+                        Eredeti formátum általános használatra. Minden adat egy CSV-ben, emberek által olvasható formában.
+                    </div>
+                    <a href="{{ url_for('user_study.export_csv') }}" class="export-button">
+                        📄 Alap CSV Letöltés
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Átlagos Értékelések -->
+        {% if stats.get('average_ratings') %}
+        <h2>⭐ Átlagos Értékelések Verzió Szerint</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Verzió</th>
+                    <th>Átlagos Értékelés</th>
+                    <th>Értékelések Száma</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rating in stats.average_ratings %}
+                <tr>
+                    <td>
+                        <span class="version-badge version-{{ rating.version }}">
+                            {{ rating.version.upper() }}
+                        </span>
+                    </td>
+                    <td>{{ "%.2f"|format(rating.avg_rating) }}</td>
+                    <td>{{ rating.count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Kérdőív Eredmények -->
+        {% if stats.get('questionnaire_results') %}
+        <h2>📝 Kérdőív Eredmények Verzió Szerint</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Verzió</th>
+                    <th>Használhatóság</th>
+                    <th>Ajánlás Minőség</th>
+                    <th>Bizalom</th>
+                    <th>Magyarázat Tisztaság</th>
+                    <th>Összesített Elégedettség</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in stats.questionnaire_results %}
+                <tr>
+                    <td>
+                        <span class="version-badge version-{{ result.version }}">
+                            {{ result.version.upper() }}
+                        </span>
+                    </td>
+                    <td>{{ "%.2f"|format(result.avg_usability or 0) }}</td>
+                    <td>{{ "%.2f"|format(result.avg_quality or 0) }}</td>
+                    <td>{{ "%.2f"|format(result.avg_trust or 0) }}</td>
+                    <td>{{ "%.2f"|format(result.avg_clarity or 0) }}</td>
+                    <td>{{ "%.2f"|format(result.avg_satisfaction or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Navigáció -->
+        <div style="margin-top: 40px; text-align: center;">
+            <a href="{{ url_for('user_study.welcome') }}" class="export-button">
+                🏠 Vissza a Főoldalra
+            </a>
+            
+            <a href="/debug/status" class="export-button" style="background: #95a5a6;">
+                🔧 Debug Status
+            </a>
+        </div>
+    </div>
+</body>
+</html>
