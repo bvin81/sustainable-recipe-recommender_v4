@@ -1556,7 +1556,12 @@ def export_statistical_csv():
             cursor = conn.cursor(cursor_factory=RealDictCursor)
             
             # Participants
-            cursor.execute("SELECT * FROM users ORDER BY user_id")
+            cursor.execute("""
+                SELECT u.*, p.age_group, p.education, p.cooking_frequency, p.sustainability_awareness
+                FROM users u
+                LEFT JOIN user_profiles p ON u.user_id = p.user_id
+                ORDER BY u.user_id
+            """)
             participants = cursor.fetchall()
            
             # Ratings  
@@ -1569,7 +1574,12 @@ def export_statistical_csv():
             
         else:  # SQLite
             conn.row_factory = sqlite3.Row
-            participants = conn.execute("SELECT * FROM users ORDER BY user_id").fetchall()
+            participants = conn.execute("""
+            SELECT u.*, p.age_group, p.education, p.cooking_frequency, p.sustainability_awareness
+            FROM users u
+            LEFT JOIN user_profiles p ON u.user_id = p.user_id
+            ORDER BY u.user_id
+        """).fetchall()
             ratings = conn.execute("SELECT * FROM recipe_ratings ORDER BY user_id, recipe_id").fetchall()
             questionnaires = conn.execute("SELECT * FROM questionnaire ORDER BY user_id").fetchall()
         
