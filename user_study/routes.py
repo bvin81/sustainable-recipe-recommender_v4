@@ -733,7 +733,7 @@ class RecommendationEngine:
 # =============================================================================
 
 db = EnhancedDatabase()
-# Initialize recommender with Hungarian recipes from JSON - OPTIMIZED
+# Inicializáció javított JSON betöltővel
 try:
     print("🔄 Loading Hungarian recipes from hungarian_recipes.json...")
     
@@ -768,7 +768,8 @@ try:
         
         if not all_recipes_df:
             print("❌ No valid recipes for normalization")
-            return
+            # Use fallback recipes below
+            raise ValueError("No valid recipes for normalization")
         
         # Convert to arrays for MinMaxScaler
         scores_array = np.array([[r['ESI'], r['HSI'], r['PPI']] for r in all_recipes_df])
@@ -881,7 +882,10 @@ try:
                 'PPI': 90,
                 'composite_score': 75,
                 'category': 'Hagyományos Magyar',
-                'images': ''
+                'images': '',
+                'show_scores': False,
+                'show_explanation': False,
+                'explanation': ""
             },
             {
                 'id': '2',
@@ -895,7 +899,10 @@ try:
                 'PPI': 85,
                 'composite_score': 80,
                 'category': 'Hagyományos Magyar',
-                'images': ''
+                'images': '',
+                'show_scores': False,
+                'show_explanation': False,
+                'explanation': ""
             },
             {
                 'id': '3',
@@ -909,7 +916,10 @@ try:
                 'PPI': 85,
                 'composite_score': 67,
                 'category': 'Hús',
-                'images': ''
+                'images': '',
+                'show_scores': False,
+                'show_explanation': False,
+                'explanation': ""
             }
         ]
         
@@ -920,6 +930,22 @@ try:
     except Exception as e:
         print(f"❌ Unexpected error loading recipes: {e}")
         recipes_data = []
+    
+    # Initialize recommender
+    if recipes_data:
+        recommender = RecommendationEngine(recipes_data)
+        print(f"✅ Recommender initialized with {len(recipes_data)} Hungarian recipes")
+    else:
+        print("❌ No recipes loaded, using empty recommender")
+        recommender = RecommendationEngine([])
+
+except Exception as e:
+    print(f"❌ Critical error during initialization: {e}")
+    import traceback
+    traceback.print_exc()
+    # Ultimate fallback
+    recommender = RecommendationEngine([])
+    print("⚠️ Using empty recommender as fallback")
     
     # Initialize recommender
     if recipes_data:
