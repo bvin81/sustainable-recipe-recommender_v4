@@ -1,0 +1,66 @@
+<!-- templates/profile.html -->
+{% extends "base.html" %}
+
+{% block title %}Profil - Sustainable Recipe Recommender{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>👤 Személyes Profil</h2>
+    <p>Kérjük, ossza meg velünk néhány alapvető információját:</p>
+    
+    <form method="POST" action="{{ url_for('user_study.profile_submit') }}">
+        <div class="form-group">
+            <label for="age_group">Korcsoport:</label>
+            <select name="age_group" id="age_group" required>
+                <option value="">Válasszon...</option>
+                <option value="18-25">18-25 év</option>
+                <option value="26-35">26-35 év</option>
+                <option value="36-45">36-45 év</option>
+                <option value="46-55">46-55 év</option>
+                <option value="56+">56+ év</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="education">Iskolai végzettség:</label>
+            <select name="education" id="education" required>
+                <option value="">Válasszon...</option>
+                <option value="alapfok">Alapfokú</option>
+                <option value="kozepfok">Középfokú</option>
+                <option value="felsofok">Felsőfokú</option>
+                <option value="phd">PhD/Doktori</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="cooking_frequency">Milyen gyakran főz otthon?</label>
+            <select name="cooking_frequency" id="cooking_frequency" required>
+                <option value="">Válasszon...</option>
+                <option value="naponta">Naponta</option>
+                <option value="hetente">Hetente többször</option>
+                <option value="hetente_egyszer">Hetente egyszer</option>
+                <option value="ritkabb">Ritkábban</option>
+                <option value="soha">Soha</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="sustainability_awareness">Mennyire fontos Önnek a fenntarthatóság az étkezésben?</label>
+            <select name="sustainability_awareness" id="sustainability_awareness" required>
+                <option value="">Válasszon...</option>
+                <option value="nagyon_fontos">Nagyon fontos</option>
+                <option value="fontos">Fontos</option>
+                <option value="kozepesen">Közepesen fontos</option>
+                <option value="kevesbe">Kevésbé fontos</option>
+                <option value="nem_fontos">Nem fontos</option>
+            </select>
+        </div>
+        
+        <div class="navigation">
+            <button type="submit" class="btn btn-success">
+                ➡️ Tovább a receptekhez
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
