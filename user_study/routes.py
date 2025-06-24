@@ -858,11 +858,26 @@ def study():
     version = session.get('version', 'v1')
     search_query = request.args.get('search', '').strip()
     
-    recommendations = recommender.get_recommendations(
-        version=version, 
-        search_query=search_query,
-        n_recommendations=5
-    )
+    try:
+        # Fixed parameter order to match RecommendationEngine.recommend method
+        recommendations = recommender.recommend(
+            search_query=search_query,  # First parameter
+            n_recommendations=5,        # Second parameter  
+            version=version            # Third parameter
+        )
+        
+        # Ensure recommendations is a list
+        if not isinstance(recommendations, list):
+            recommendations = []
+            
+    except Exception as e:
+        print(f"❌ Study route error: {e}")
+        recommendations = []
+    
+    return render_template('study.html', 
+                         recommendations=recommendations,
+                         search_query=search_query,
+                         version=version)
     
     return render_template('study.html', 
                          recommendations=recommendations, 
