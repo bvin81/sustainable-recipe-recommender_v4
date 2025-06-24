@@ -1545,64 +1545,73 @@ def debug_tables():
 
 @user_study_bp.route('/admin/export/statistical_csv')
 def export_statistical_csv():
-    """PostgreSQL kompatibilis statisztikai CSV export - EGYETLEN VERZIÓ"""
+    """Statistical CSV export with recipe scores included"""
     try:
-        import csv
-        import io
-        from datetime import datetime
+        # 1. FELHASZNÁLÓI ADATOK a PostgreSQL-ből
+        conn = db.get_connection()
+        if not conn:
+            return "Database connection failed", 500
         
-        print("🔍 Starting PostgreSQL statistical CSV export...")
-        
-        database_url = os.environ.get('DATABASE_URL')
-        
-        if not database_url:
-            return "No DATABASE_URL found", 500
+        if db.db_type == 'postgresql':
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
             
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
+            # Participants
+            cursor.execute("SELECT * FROM participants ORDER BY user_id")
+            participants = cursor.fetchall()
+            
+            # Ratings  
+            cursor.execute("SELECT * FROM recipe_ratings ORDER BY user_id, recipe_id")
+            ratings = cursor.fetchall()
+            
+            # Questionnaires
+            cursor.execute("SELECT * FROM questionnaire ORDER BY user_id")
+            questionnaires = cursor.fetchall()
+            
+        else:  # SQLite
+            conn.row_factory = sqlite3.Row
+            participants = conn.execute("SELECT * FROM participants ORDER BY user_id").fetchall()
+            ratings = conn.execute("SELECT * FROM recipe_ratings ORDER BY user_id, recipe_id").fetchall() 
+            questionnaires = conn.execute("SELECT * FROM questionnaire ORDER BY user_id").fetchall()
         
-        conn = psycopg2.connect(database_url, sslmode='require')
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        print("🐘 Connected to PostgreSQL")
-        
-        # USERS tábla
-        cursor.execute("SELECT user_id, version, display_name FROM users ORDER BY user_id")
-        users = cursor.fetchall()
-        print(f"📊 Users: {len(users)}")
-        
-        # USER_PROFILES tábla
-        cursor.execute("SELECT user_id, age_group, education, cooking_frequency, sustainability_awareness FROM user_profiles")
-        profiles_list = cursor.fetchall()
-        profiles = {row['user_id']: dict(row) for row in profiles_list}
-        print(f"📊 Profiles: {len(profiles)}")
-        
-        # QUESTIONNAIRE tábla
-        cursor.execute("SELECT user_id, system_usability, recommendation_quality, trust_level, explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments FROM questionnaire")
-        questionnaire_list = cursor.fetchall()
-        questionnaires = {row['user_id']: dict(row) for row in questionnaire_list}
-        print(f"📊 Questionnaires: {len(questionnaires)}")
-        
-        # RECIPE_RATINGS tábla
-        cursor.execute("SELECT user_id, recipe_id, rating FROM recipe_ratings ORDER BY user_id")
-        ratings = cursor.fetchall()
-        print(f"📊 Ratings: {len(ratings)}")
-        
-        cursor.close()
         conn.close()
         
-        # CSV építés
+        # 2. RECEPTEK ADATAI a JSON fájlból (recommender objektumból)
+        # A recommender már be van töltve a routes.py tetején
+        recipe_lookup = {}
+        for recipe in recommender.recipes:
+            recipe_id = str(recipe.get('id', recipe.get('recipeid', '')))
+            if recipe_id:
+                recipe_lookup[recipe_id] = {
+                    'name': recipe.get('name', ''),
+                    'health_score': recipe.get('hsi_normalized', recipe.get('HSI', 0)),
+                    'environmental_score': recipe.get('esi_inverted', 100 - recipe.get('ESI', 100)),
+                    'meal_score': recipe.get('ppi_normalized', recipe.get('PPI', 0)),
+                    'composite_score': recipe.get('composite_score', 0)
+                }
+        
+        print(f"📊 Recipe lookup created: {len(recipe_lookup)} recipes loaded")
+        
+        # 3. ADATOK ÖSSZEKAPCSOLÁSA
+        # Group data by user_id
+        profiles = {p['user_id']: dict(p) for p in participants}
+        questionnaire_data = {q['user_id']: dict(q) for q in questionnaires}
+        
         csv_rows = []
         
-        for user in users:
+        for user in participants:
             user_id = user['user_id']
             profile = profiles.get(user_id, {})
-            questionnaire = questionnaires.get(user_id, {})
-            user_ratings = [r for r in ratings if r['user_id'] == user_id]
+            questionnaire = questionnaire_data.get(user_id, {})
+            user_ratings = [dict(r) for r in ratings if r['user_id'] == user_id]
             
             if user_ratings:
-                # Minden rating-hez egy sor
+                # Van rating - minden rating-hez egy sor
                 for rating in user_ratings:
+                    recipe_id = str(rating.get('recipe_id', ''))
+                    
+                    # Receptek adatainak kikeresése a JSON-ból
+                    recipe_data = recipe_lookup.get(recipe_id, {})
+                    
                     csv_rows.append({
                         'user_id': user_id,
                         'group': user.get('version', ''),
@@ -1610,12 +1619,21 @@ def export_statistical_csv():
                         'education_level': profile.get('education', ''),
                         'cooking_frequency': profile.get('cooking_frequency', ''),
                         'importance_sustainability': profile.get('sustainability_awareness', ''),
-                        'recipeid': rating.get('recipe_id', ''),
-                        'health_score': '',
-                        'env_score': '',
-                        'meal_score': '',
-                        'composite_score': '',
+                        
+                        # RECEPT ADATOK
+                        'recipeid': recipe_id,
+                        'recipe_name': recipe_data.get('name', 'Unknown recipe'),
+                        
+                        # SCORE ADATOK A JSON-BÓL ← Itt a megoldás!
+                        'health_score': recipe_data.get('health_score', ''),
+                        'env_score': recipe_data.get('environmental_score', ''),
+                        'meal_score': recipe_data.get('meal_score', ''),
+                        'composite_score': recipe_data.get('composite_score', ''),
+                        
+                        # FELHASZNÁLÓI RATING
                         'rating': rating.get('rating', ''),
+                        
+                        # KÉRDŐÍV ADATOK
                         'usability': questionnaire.get('system_usability', ''),
                         'quality': questionnaire.get('recommendation_quality', ''),
                         'trust': questionnaire.get('trust_level', ''),
@@ -1623,7 +1641,7 @@ def export_statistical_csv():
                         'comment': questionnaire.get('additional_comments', '')
                     })
             else:
-                # Nincs rating - demographic sor
+                # Nincs rating - csak demographic adat
                 csv_rows.append({
                     'user_id': user_id,
                     'group': user.get('version', ''),
@@ -1632,6 +1650,7 @@ def export_statistical_csv():
                     'cooking_frequency': profile.get('cooking_frequency', ''),
                     'importance_sustainability': profile.get('sustainability_awareness', ''),
                     'recipeid': '',
+                    'recipe_name': '',
                     'health_score': '',
                     'env_score': '',
                     'meal_score': '',
@@ -1644,23 +1663,28 @@ def export_statistical_csv():
                     'comment': questionnaire.get('additional_comments', '')
                 })
         
-        # CSV output
+        # 4. CSV GENERÁLÁSA
         output = io.StringIO()
         if csv_rows:
             writer = csv.DictWriter(output, fieldnames=csv_rows[0].keys())
             writer.writeheader()
             writer.writerows(csv_rows)
+            
+            print(f"✅ CSV export completed: {len(csv_rows)} rows")
+            print(f"📊 Recipe data found for: {sum(1 for row in csv_rows if row['health_score'])} ratings")
         else:
             # Empty fallback
             writer = csv.writer(output)
-            writer.writerow(['user_id', 'group', 'age', 'education_level', 'cooking_frequency', 'importance_sustainability', 'recipeid', 'health_score', 'env_score', 'meal_score', 'composite_score', 'rating', 'usability', 'quality', 'trust', 'satisfaction', 'comment'])
+            writer.writerow(['user_id', 'group', 'age', 'education_level', 'cooking_frequency', 
+                           'importance_sustainability', 'recipeid', 'recipe_name',
+                           'health_score', 'env_score', 'meal_score', 'composite_score', 
+                           'rating', 'usability', 'quality', 'trust', 'satisfaction', 'comment'])
         
         output.seek(0)
         response = make_response(output.getvalue())
         response.headers['Content-Type'] = 'text/csv; charset=utf-8'
         response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         
-        print(f"✅ PostgreSQL CSV export completed: {len(csv_rows)} rows")
         return response
         
     except Exception as e:
@@ -1668,7 +1692,6 @@ def export_statistical_csv():
         import traceback
         traceback.print_exc()
         return f"Statistical CSV export error: {str(e)}", 500
-        
 
 
 # Export
