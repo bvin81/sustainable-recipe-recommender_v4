@@ -170,7 +170,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>📋 Záró Kérdőív</h1>
+            <h1>📋 Záró kérdőív</h1>
             <p>Az Ön véleménye segít fejleszteni a rendszert</p>
         </div>
 
@@ -212,7 +212,7 @@
 
                 <div class="question">
                     <div class="question-title">
-                       ✨ Mennyire volt jó minőségű a recept ajánlások? *
+                       ✨ Mennyire voltak jó minőségűek a receptajánlások? *
                    </div>
                    <div class="likert-scale">
                        {% for i in range(1, 6) %}
@@ -280,7 +280,7 @@
 
                <div class="question">
                    <div class="question-title">
-                       🌱 Mennyire fontos Önnek, hogy egy recept ajánló figyelembe vegye a környezeti hatásokat? *
+                       🌱 Mennyire fontos Önnek, hogy egy receptajánló figyelembe vegye a környezeti hatásokat? *
                    </div>
                    <div class="likert-scale">
                        {% for i in range(1, 6) %}
@@ -336,7 +336,7 @@
 
            <div style="text-align: center; margin-top: 40px;">
                <button type="submit" class="btn" id="submitBtn" disabled>
-                   🏁 Tanulmány Befejezése
+                   🏁 Tanulmány befejezése
                </button>
            </div>
        </form>
@@ -368,7 +368,7 @@
            
            if (allAnswered) {
                submitBtn.style.background = 'linear-gradient(45deg, #27ae60, #2ecc71)';
-               submitBtn.textContent = '🏁 Tanulmány Befejezése';
+               submitBtn.textContent = '🏁 Tanulmány befejezése';
            } else {
                submitBtn.style.background = '#bdc3c7';
                submitBtn.textContent = '⏳ Válaszoljon minden kérdésre';
