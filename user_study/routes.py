@@ -1146,6 +1146,315 @@ def export_json():
     except Exception as e:
         return f"JSON Export error: {e}", 500
 
+# Új admin export route hozzáadása a user_study/routes.py fájlhoz
+# A meglévő export funkciók mellé add hozzá:
+
+@user_study_bp.route('/admin/export/statistical_csv')
+def export_statistical_csv():
+    """Statisztikai elemzésre optimalizált CSV export"""
+    try:
+        import csv
+        import io
+        from datetime import datetime
+        
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        # Részletes adatok lekérése minden résztvevőről
+        query = '''
+        SELECT 
+            p.user_id,
+            p.age_group,
+            p.education,
+            p.cooking_frequency, 
+            p.sustainability_awareness,
+            p.version,
+            p.is_completed,
+            p.created_at,
+            q.system_usability,
+            q.recommendation_quality,
+            q.trust_level,
+            q.explanation_clarity,
+            q.sustainability_importance,
+            q.overall_satisfaction,
+            q.additional_comments,
+            q.timestamp as questionnaire_timestamp
+        FROM participants p
+        LEFT JOIN questionnaire q ON p.user_id = q.user_id
+        ORDER BY p.user_id
+        '''
+        
+        participants = conn.execute(query).fetchall()
+        
+        # Interakciók lekérése
+        interactions_query = '''
+        SELECT 
+            user_id,
+            recipe_id,
+            rating,
+            explanation_helpful,
+            view_time_seconds,
+            timestamp
+        FROM interactions
+        ORDER BY user_id, timestamp
+        '''
+        
+        interactions = conn.execute(interactions_query).fetchall()
+        conn.close()
+        
+        if not participants:
+            return "Nincs exportálható adat.", 404
+        
+        # Statisztikai DataFrame építése
+        statistical_data = []
+        
+        for participant in participants:
+            # Alapadatok
+            base_data = {
+                'user_id': participant['user_id'],
+                'group': f"v{participant['version'][1]}" if participant['version'] else "unknown",  # v1, v2, v3
+                'age': participant['age_group'] or "unknown",
+                'education_level': participant['education'] or "unknown", 
+                'cooking_frequency': participant['cooking_frequency'] or "unknown",
+                'importance_sustainability': participant['sustainability_awareness'] or 0,
+                'recipeid': None,  # Ezt az interactions-ből töltjük fel
+                'health_score': None,
+                'env_score': None, 
+                'meal_score': None,
+                'composite_score': None,
+                'rating': None,
+                'usability': participant['system_usability'],
+                'quality': participant['recommendation_quality'],
+                'trust': participant['trust_level'],
+                'satisfaction': participant['overall_satisfaction'],
+                'comment': participant['additional_comments'] or ""
+            }
+            
+            # Interakciók hozzáadása ehhez a felhasználóhoz
+            user_interactions = [i for i in interactions if i['user_id'] == participant['user_id']]
+            
+            if user_interactions:
+                # Minden értékeléshez egy sor
+                for interaction in user_interactions:
+                    row_data = base_data.copy()
+                    row_data['recipeid'] = interaction['recipe_id']
+                    row_data['rating'] = interaction['rating']
+                    
+                    # Recipe pontszámok hozzáadása (ha van betöltött recept adatbázis)
+                    if recommender.recipes_df is not None:
+                        try:
+                            recipe_row = recommender.recipes_df[
+                                recommender.recipes_df['recipeid'] == interaction['recipe_id']
+                            ]
+                            if not recipe_row.empty:
+                                recipe = recipe_row.iloc[0]
+                                row_data['health_score'] = recipe.get('HSI', 0)
+                                row_data['env_score'] = recipe.get('ESI', 0) 
+                                row_data['meal_score'] = recipe.get('PPI', 0)
+                                row_data['composite_score'] = recipe.get('composite_score', 0)
+                        except:
+                            pass  # Fallback értékek maradnak
+                    
+                    statistical_data.append(row_data)
+            else:
+                # Ha nincs interakció, akkor is egy sor a demográfiai adatokkal
+                statistical_data.append(base_data)
+        
+        # CSV generálása
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header (pontosan a táblázat szerint)
+        headers = [
+            'user_id', 'group', 'age', 'education_level', 'cooking_frequency',
+            'importance_sustainability', 'recipeid', 'health_score', 'env_score', 
+            'meal_score', 'composite_score', 'rating', 'usability', 'quality',
+            'trust', 'satisfaction', 'comment'
+        ]
+        writer.writerow(headers)
+        
+        # Adatok írása
+        for row_data in statistical_data:
+            csv_row = [
+                row_data['user_id'],
+                row_data['group'],
+                row_data['age'], 
+                row_data['education_level'],
+                row_data['cooking_frequency'],
+                row_data['importance_sustainability'],
+                row_data['recipeid'] or '',
+                row_data['health_score'] or '',
+                row_data['env_score'] or '',
+                row_data['meal_score'] or '',
+                row_data['composite_score'] or '',
+                row_data['rating'] or '',
+                row_data['usability'] or '',
+                row_data['quality'] or '',
+                row_data['trust'] or '',
+                row_data['satisfaction'] or '',
+                row_data['comment']
+            ]
+            writer.writerow(csv_row)
+        
+        # Response
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+        
+    except Exception as e:
+        return f"Statisztikai CSV export hiba: {e}", 500
+
+
+@user_study_bp.route('/admin/export/spss_ready')
+def export_spss_ready():
+    """SPSS-re optimalizált export numerikus kódolással"""
+    try:
+        import csv
+        import io
+        from datetime import datetime
+        
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        # Ugyanaz a query mint fent...
+        query = '''
+        SELECT 
+            p.user_id, p.age_group, p.education, p.cooking_frequency, 
+            p.sustainability_awareness, p.version, p.is_completed,
+            q.system_usability, q.recommendation_quality, q.trust_level,
+            q.explanation_clarity, q.sustainability_importance, q.overall_satisfaction
+        FROM participants p
+        LEFT JOIN questionnaire q ON p.user_id = q.user_id
+        ORDER BY p.user_id
+        '''
+        
+        participants = conn.execute(query).fetchall()
+        conn.close()
+        
+        if not participants:
+            return "Nincs exportálható adat.", 404
+        
+        # Kódolási táblázatok
+        age_mapping = {
+            '18-25': 1, '26-35': 2, '36-45': 3, '46-55': 4, '55+': 5,
+            'Under 18': 0, '18-24': 1, '25-34': 2, '35-44': 3, '45-54': 4, 'Over 55': 5
+        }
+        
+        education_mapping = {
+            'Alapfokú': 1, 'Középfokú': 2, 'Felsőfokú': 3, 'PhD': 4,
+            'Elementary': 1, 'High School': 2, 'Bachelor': 3, 'Master': 4, 'PhD': 5
+        }
+        
+        cooking_mapping = {
+            'Soha': 1, 'Ritkán': 2, 'Heti 1-2x': 3, 'Heti 3-5x': 4, 'Napi': 5,
+            'Never': 1, 'Rarely': 2, 'Weekly': 3, 'Often': 4, 'Daily': 5
+        }
+        
+        version_mapping = {'v1': 1, 'v2': 2, 'v3': 3}
+        
+        # SPSS kompatibilis CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header numerikus változókkal
+        headers = [
+            'UserID', 'Group_Numeric', 'Age_Numeric', 'Education_Numeric', 
+            'Cooking_Numeric', 'Sustainability_Importance', 'Completed',
+            'Usability', 'Quality', 'Trust', 'Clarity', 'Overall_Satisfaction'
+        ]
+        writer.writerow(headers)
+        
+        # Adatok numerikus kódolással
+        for participant in participants:
+            csv_row = [
+                participant['user_id'],
+                version_mapping.get(participant['version'], 0),
+                age_mapping.get(participant['age_group'], 0),
+                education_mapping.get(participant['education'], 0),
+                cooking_mapping.get(participant['cooking_frequency'], 0),
+                participant['sustainability_awareness'] or 0,
+                1 if participant['is_completed'] else 0,
+                participant['system_usability'] or 0,
+                participant['recommendation_quality'] or 0,
+                participant['trust_level'] or 0,
+                participant['explanation_clarity'] or 0,
+                participant['overall_satisfaction'] or 0
+            ]
+            writer.writerow(csv_row)
+        
+        # Response
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename=spss_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+        
+    except Exception as e:
+        return f"SPSS CSV export hiba: {e}", 500
+
+
+@user_study_bp.route('/admin/export/pandas_dataframe')
+def export_pandas_ready():
+    """Pandas DataFrame-re optimalizált export"""
+    try:
+        import json
+        from datetime import datetime
+        
+        conn = sqlite3.connect(db.db_path)
+        conn.row_factory = sqlite3.Row
+        
+        # Teljes adatkinyerés
+        participants_query = '''
+        SELECT * FROM participants ORDER BY user_id
+        '''
+        
+        interactions_query = '''
+        SELECT i.*, p.version 
+        FROM interactions i
+        JOIN participants p ON i.user_id = p.user_id
+        ORDER BY i.user_id, i.timestamp
+        '''
+        
+        questionnaire_query = '''
+        SELECT * FROM questionnaire ORDER BY user_id
+        '''
+        
+        participants = [dict(row) for row in conn.execute(participants_query).fetchall()]
+        interactions = [dict(row) for row in conn.execute(interactions_query).fetchall()]
+        questionnaire = [dict(row) for row in conn.execute(questionnaire_query).fetchall()]
+        
+        conn.close()
+        
+        # JSON struktúra Pandas-nak
+        export_data = {
+            'metadata': {
+                'export_timestamp': datetime.now().isoformat(),
+                'total_participants': len(participants),
+                'total_interactions': len(interactions),
+                'total_questionnaires': len(questionnaire)
+            },
+            'participants': participants,
+            'interactions': interactions,
+            'questionnaire': questionnaire,
+            'variable_mappings': {
+                'group_codes': {'v1': 1, 'v2': 2, 'v3': 3},
+                'age_codes': {'18-25': 1, '26-35': 2, '36-45': 3, '46-55': 4, '55+': 5},
+                'education_codes': {'Alapfokú': 1, 'Középfokú': 2, 'Felsőfokú': 3, 'PhD': 4}
+            }
+        }
+        
+        response = jsonify(export_data)
+        response.headers['Content-Disposition'] = f'attachment; filename=pandas_data_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'error': f'Pandas export hiba: {e}'}), 500
+
 # Export
 __all__ = ['user_study_bp']
 
