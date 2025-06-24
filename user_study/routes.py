@@ -43,9 +43,11 @@ import csv
 import io
 import json
 from datetime import datetime
+# Enhanced modules (conditional import) - FIXED VERSION
 try:
-    from .enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
-    from .evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+    from enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
+    from evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+    from enhanced_routes_integration import EnhancedRecommendationEngine
     ENHANCED_MODULES_AVAILABLE = True
     print("✅ Enhanced modules loaded successfully")
 except ImportError as e:
