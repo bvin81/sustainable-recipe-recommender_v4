@@ -733,9 +733,9 @@ class RecommendationEngine:
 # =============================================================================
 
 db = EnhancedDatabase()
-# Initialize recommender with JSON recipe data - FIXED
+# Initialize recommender with Hungarian recipes from JSON - OPTIMIZED
 try:
-    print("🔄 Loading recipes from hungarian_recipes.json...")
+    print("🔄 Loading Hungarian recipes from hungarian_recipes.json...")
     
     # Try to load from JSON file
     recipes_data = []
@@ -743,69 +743,111 @@ try:
     
     try:
         with open(json_path, 'r', encoding='utf-8') as f:
-            recipes_data = json.load(f)
+            raw_recipes = json.load(f)
         
-        print(f"✅ Loaded {len(recipes_data)} recipes from JSON file")
+        print(f"📊 Found {len(raw_recipes)} raw recipes in JSON file")
         
-        # Ensure each recipe has required fields for enhanced system
-        for i, recipe in enumerate(recipes_data):
-            if 'id' not in recipe:
-                recipe['id'] = str(i + 1)
-            if 'HSI' not in recipe:
-                recipe['HSI'] = recipe.get('hsi_normalized', 70)
-            if 'ESI' not in recipe:
-                recipe['ESI'] = recipe.get('esi_inverted', 70)
-            if 'PPI' not in recipe:
-                recipe['PPI'] = recipe.get('ppi_normalized', 70)
-            if 'composite_score' not in recipe:
-                recipe['composite_score'] = (recipe.get('HSI', 70) + recipe.get('ESI', 70) + recipe.get('PPI', 70)) / 3
+        # Convert to enhanced system format
+        recipes_data = []
+        for recipe in raw_recipes:
+            # Convert Hungarian recipe format to enhanced format
+            enhanced_recipe = {
+                'id': str(recipe.get('recipeid', len(recipes_data) + 1)),
+                'recipeid': recipe.get('recipeid'),
+                'name': recipe.get('title', 'Névtelen Recept'),
+                'title': recipe.get('title', 'Névtelen Recept'),
+                'ingredients': recipe.get('ingredients', ''),
+                'instructions': recipe.get('instructions', ''),
+                'HSI': float(recipe.get('HSI', 70)),
+                'ESI': float(recipe.get('ESI', 70)), 
+                'PPI': float(recipe.get('PPI', 70)),
+                'category': recipe.get('category', 'Egyéb'),
+                'images': recipe.get('images', ''),
+                # Calculate composite score
+                'composite_score': (
+                    float(recipe.get('HSI', 70)) + 
+                    float(recipe.get('ESI', 70)) + 
+                    float(recipe.get('PPI', 70))
+                ) / 3,
+                # Enhanced compatibility
+                'show_scores': False,
+                'show_explanation': False,
+                'explanation': ""
+            }
+            recipes_data.append(enhanced_recipe)
+        
+        print(f"✅ Successfully converted {len(recipes_data)} Hungarian recipes")
+        print(f"📊 Sample recipe: {recipes_data[0]['name']} (HSI: {recipes_data[0]['HSI']}, ESI: {recipes_data[0]['ESI']}, PPI: {recipes_data[0]['PPI']})")
         
     except FileNotFoundError:
-        print(f"⚠️ JSON file not found at {json_path}")
-        # Fallback to sample data
+        print(f"⚠️ hungarian_recipes.json not found at {json_path}")
+        print("🔧 Using sample Hungarian recipes as fallback")
+        
+        # Hungarian sample recipes fallback
         recipes_data = [
             {
                 'id': '1',
+                'recipeid': 1,
                 'name': 'Magyar Gulyás',
+                'title': 'Magyar Gulyás',
                 'ingredients': 'marhahús, hagyma, paprika, burgonya, paradicsom',
+                'instructions': 'Pirítsd meg a hagymát, add hozzá a húst, fűszerezd paprikával...',
                 'HSI': 75,
                 'ESI': 60,
                 'PPI': 90,
                 'composite_score': 75,
-                'category': 'hagyományos'
+                'category': 'Hagyományos Magyar',
+                'images': ''
             },
             {
                 'id': '2',
-                'name': 'Egészséges Saláta',
-                'ingredients': 'saláta, paradicsom, uborka, olívaolaj, citrom',
-                'HSI': 95,
-                'ESI': 85,
-                'PPI': 70,
-                'composite_score': 83,
-                'category': 'egészséges'
-            },
-            {
-                'id': '3',
-                'name': 'Zöldséges Rizottó',
-                'ingredients': 'rizs, sárgarépa, borsó, hagyma, sajt',
+                'recipeid': 2,
+                'name': 'Lecsó',
+                'title': 'Lecsó',
+                'ingredients': 'paprika, hagyma, paradicsom, tojás, kolbász',
+                'instructions': 'Párold meg a paprikát hagymával, add hozzá a paradicsomot...',
                 'HSI': 80,
                 'ESI': 75,
                 'PPI': 85,
                 'composite_score': 80,
-                'category': 'vegetáriánus'
+                'category': 'Hagyományos Magyar',
+                'images': ''
+            },
+            {
+                'id': '3',
+                'recipeid': 3,
+                'name': 'Schnitzel',
+                'title': 'Schnitzel',
+                'ingredients': 'sertéshús, tojás, zsemlemorzsa, olaj',
+                'instructions': 'Verd ki a húst, forgasd meg tojásban és morzsában...',
+                'HSI': 65,
+                'ESI': 50,
+                'PPI': 85,
+                'composite_score': 67,
+                'category': 'Hús',
+                'images': ''
             }
         ]
-        print(f"🔧 Using {len(recipes_data)} sample Hungarian recipes as fallback")
-    
+        
     except json.JSONDecodeError as e:
         print(f"❌ JSON parsing error: {e}")
         recipes_data = []
     
-    recommender = RecommendationEngine(recipes_data)
-    print(f"✅ Recommender initialized successfully with {len(recipes_data)} Hungarian recipes")
+    except Exception as e:
+        print(f"❌ Unexpected error loading recipes: {e}")
+        recipes_data = []
+    
+    # Initialize recommender
+    if recipes_data:
+        recommender = RecommendationEngine(recipes_data)
+        print(f"✅ Hungarian Recipe Recommender initialized with {len(recipes_data)} recipes")
+        print(f"🍽️ Categories found: {set(r['category'] for r in recipes_data[:10])}")
+    else:
+        print("⚠️ No recipes loaded, using empty recommender")
+        recommender = RecommendationEngine([])
     
 except Exception as e:
-    print(f"❌ Recommender initialization failed: {e}")
+    print(f"❌ Critical error in recommender initialization: {e}")
     print(f"🔧 Traceback: {traceback.format_exc()}")
     # Final fallback
     recommender = RecommendationEngine([])
