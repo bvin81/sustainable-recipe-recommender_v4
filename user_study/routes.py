@@ -43,8 +43,15 @@ import csv
 import io
 import json
 from datetime import datetime
-# Enhanced modules (conditional import) - FIXED VERSION
+# Enhanced modules (conditional import) - FIXED VERSION WITH PATH
 try:
+    import sys
+    import os
+    # Add current directory to Python path for imports
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(0, current_dir)
+    
     from enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
     from evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
     from enhanced_routes_integration import EnhancedRecommendationEngine
@@ -54,7 +61,6 @@ except ImportError as e:
     print(f"⚠️ Enhanced modules not available: {e}")
     print("🔧 Falling back to original recommendation system")
     ENHANCED_MODULES_AVAILABLE = False
-
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
 
@@ -726,7 +732,13 @@ class RecommendationEngine:
 # =============================================================================
 
 db = EnhancedDatabase()
-recommender = HungarianJSONRecommender()
+# Initialize recommender with fallback
+try:
+    recommender = RecommendationEngine([])  # Empty list initially, will be loaded later
+    print("✅ Recommender initialized successfully")
+except Exception as e:
+    print(f"❌ Recommender initialization failed: {e}")
+    recommender = None
 
 def get_user_version():
     """A/B/C verzió kiválasztása"""
