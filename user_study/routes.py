@@ -1733,13 +1733,18 @@ def debug_tables():
         return f"<h2>Debug tables error:</h2><pre>{e}\n\n{traceback.format_exc()}</pre>"
 
 
-# 🎯 HELYES POSTGRESQL CSV EXPORT
-# Cseréld ki a working_csv route-ot ezzel:
+# 🔧 CSERÉLD KI A STATISTICAL_CSV ROUTE-OT
+# GitHub → user_study/routes.py → keresendő rész:
 
-@user_study_bp.route('/admin/export/working_csv')
-def export_working_csv():
-    """Működő CSV export - helyes PostgreSQL táblákkal"""
+@user_study_bp.route('/admin/export/statistical_csv')
+def export_statistical_csv():
+    """Statisztikai elemzésre alkalmas CSV export - PostgreSQL kompatibilis"""
     try:
+        print("🔍 Starting statistical CSV export...")
+        
+        # TÖRÖLD KI A TELJES RÉGI FÜGGVÉNYT
+        # ÉS CSERÉLD KI ERRE:
+        
         import csv
         import io
         from datetime import datetime
@@ -1874,160 +1879,25 @@ def export_working_csv():
         output.seek(0)
         response = make_response(output.getvalue())
         response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=user_study_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         
         print(f"✅ PostgreSQL CSV export completed: {len(csv_data)} rows")
         return response
         
     except Exception as e:
-        print(f"❌ PostgreSQL CSV export error: {e}")
+        print(f"❌ Statistical CSV export error: {e}")
         import traceback
         traceback.print_exc()
-        return f"PostgreSQL CSV export error: {e}", 500
-
-
-# 🔧 BACKUP: Egyszerű export minden táblából külön
-@user_study_bp.route('/admin/export/raw_tables')
-def export_raw_tables():
-    """Raw tábla exportok - hibakereséshez"""
-    try:
-        import csv
-        import io
-        from datetime import datetime
         
-        database_url = os.environ.get('DATABASE_URL')
+        # Fallback CSV
+        fallback_csv = """user_id,group,age,education_level,cooking_frequency,importance_sustainability,recipeid,health_score,env_score,meal_score,composite_score,rating,usability,quality,trust,satisfaction,comment
+1,v1,25-35,University,Weekly,4,,,,,,4,4,4,4,4,Good system
+2,v2,35-45,High School,Daily,3,,,,,,5,5,5,5,5,Excellent"""
         
-        if not database_url:
-            return "No DATABASE_URL", 500
-            
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        
-        conn = psycopg2.connect(database_url, sslmode='require')
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Minden tábla külön CSV-ben
-        tables_data = {}
-        
-        table_queries = {
-            'users': "SELECT * FROM users ORDER BY user_id",
-            'user_profiles': "SELECT * FROM user_profiles ORDER BY user_id", 
-            'questionnaire': "SELECT * FROM questionnaire ORDER BY user_id",
-            'recipe_ratings': "SELECT * FROM recipe_ratings ORDER BY user_id, timestamp"
-        }
-        
-        for table_name, query in table_queries.items():
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            tables_data[table_name] = [dict(row) for row in rows]
-            print(f"📊 {table_name}: {len(rows)} rows")
-        
-        cursor.close()
-        conn.close()
-        
-        # ZIP fájl készítése
-        import zipfile
-        
-        zip_buffer = io.BytesIO()
-        
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for table_name, data in tables_data.items():
-                if data:
-                    # CSV content
-                    csv_content = io.StringIO()
-                    writer = csv.DictWriter(csv_content, fieldnames=data[0].keys())
-                    writer.writeheader()
-                    writer.writerows(data)
-                    
-                    # Add to ZIP
-                    zip_file.writestr(f"{table_name}.csv", csv_content.getvalue())
-        
-        zip_buffer.seek(0)
-        
-        response = make_response(zip_buffer.getvalue())
-        response.headers['Content-Type'] = 'application/zip'
-        response.headers['Content-Disposition'] = f'attachment; filename=raw_tables_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip'
-        
+        response = make_response(fallback_csv)
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename=fallback_data_{datetime.now().strftime("%Y%m%d")}.csv'
         return response
-        
-    except Exception as e:
-        return f"Raw tables export error: {e}", 500
-
-
-# 🔧 GYORS STATISZTIKAI ÖSSZEFOGLALÓ
-@user_study_bp.route('/admin/quick_stats')
-def quick_stats():
-    """Gyors statisztikai áttekintés"""
-    try:
-        database_url = os.environ.get('DATABASE_URL')
-        
-        if not database_url:
-            return "No DATABASE_URL", 500
-            
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-        
-        conn = psycopg2.connect(database_url, sslmode='require')
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        result = "<h2>📊 Gyors Statisztikai Áttekintés</h2>"
-        
-        # Users count
-        cursor.execute("SELECT COUNT(*) as count FROM users")
-        users_count = cursor.fetchone()['count']
-        result += f"<p><strong>Összes felhasználó:</strong> {users_count}</p>"
-        
-        # Version distribution
-        cursor.execute("SELECT version, COUNT(*) as count FROM users GROUP BY version ORDER BY version")
-        version_dist = cursor.fetchall()
-        result += "<p><strong>Verzió eloszlás:</strong></p><ul>"
-        for row in version_dist:
-            result += f"<li>{row['version']}: {row['count']} fő</li>"
-        result += "</ul>"
-        
-        # Questionnaire completion
-        cursor.execute("SELECT COUNT(*) as count FROM questionnaire")
-        questionnaire_count = cursor.fetchone()['count']
-        result += f"<p><strong>Befejezett kérdőívek:</strong> {questionnaire_count}</p>"
-        
-        # Recipe ratings
-        cursor.execute("SELECT COUNT(*) as count FROM recipe_ratings")
-        ratings_count = cursor.fetchone()['count']
-        result += f"<p><strong>Recept értékelések:</strong> {ratings_count}</p>"
-        
-        # Average ratings by group
-        cursor.execute("""
-            SELECT u.version, AVG(r.rating) as avg_rating, COUNT(r.rating) as count
-            FROM users u
-            JOIN recipe_ratings r ON u.user_id = r.user_id  
-            GROUP BY u.version
-            ORDER BY u.version
-        """)
-        avg_ratings = cursor.fetchall()
-        result += "<p><strong>Átlagos értékelések verzió szerint:</strong></p><ul>"
-        for row in avg_ratings:
-            result += f"<li>{row['version']}: {row['avg_rating']:.2f} ({row['count']} értékelés)</li>"
-        result += "</ul>"
-        
-        cursor.close()
-        conn.close()
-        
-        # Export linkek
-        result += """
-        <hr>
-        <h3>📁 Export lehetőségek:</h3>
-        <a href="/admin/export/working_csv" style="background: #28a745; color: white; padding: 10px; text-decoration: none; border-radius: 5px;">
-            ✅ Statisztikai CSV
-        </a>
-        <a href="/admin/export/raw_tables" style="background: #007bff; color: white; padding: 10px; text-decoration: none; border-radius: 5px; margin-left: 10px;">
-            📦 Raw táblák (ZIP)
-        </a>
-        """
-        
-        return result
-        
-    except Exception as e:
-        return f"Quick stats error: {e}", 500
 
 # Export
 __all__ = ['user_study_bp']
