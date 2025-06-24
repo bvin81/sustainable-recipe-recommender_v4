@@ -728,6 +728,75 @@ class RecommendationEngine:
             return self.enhanced_engine.get_metrics_dashboard_data()
         return None
 
+
+
+
+    def search_recipes(self, search_query, max_results=20):
+        """Simple search implementation"""
+        candidates = []
+        search_terms = search_query.lower().split()
+        
+        for i, recipe in enumerate(self.recipes):
+            ingredients = str(recipe.get('ingredients', '')).lower()
+            name = str(recipe.get('name', '')).lower()
+            
+            score = 0
+            for term in search_terms:
+                if term in ingredients:
+                    score += 2
+                if term in name:
+                    score += 1
+            
+            if score > 0:
+                candidates.append(i)
+        
+        # Sort by score
+        candidates.sort(key=lambda i: self._calculate_search_score(i, search_terms), reverse=True)
+        return candidates[:max_results]
+    
+    def _calculate_search_score(self, recipe_index, search_terms):
+        """Calculate search score for a recipe"""
+        recipe = self.recipes[recipe_index]
+        ingredients = str(recipe.get('ingredients', '')).lower()
+        name = str(recipe.get('name', '')).lower()
+        
+        score = 0
+        for term in search_terms:
+            if term in ingredients:
+                score += 2
+            if term in name:
+                score += 1
+        
+        return score / len(search_terms) if search_terms else 0
+    
+    def generate_explanation(self, recipe, search_query=""):
+        """Generate explanation for v3 version"""
+        composite = recipe.get('composite_score', 70)
+        esi = recipe.get('ESI', 70)
+        hsi = recipe.get('HSI', 70)
+        category = recipe.get('category', '')
+        
+        explanation = f"🎯 Ezt a receptet {composite:.1f}/100 összpontszám alapján ajánljuk. "
+        
+        if esi >= 80:
+            explanation += "🌱 Kiváló környezeti értékeléssel! "
+        elif esi >= 60:
+            explanation += "🌿 Jó környezeti értékeléssel. "
+        else:
+            explanation += "🔸 Közepes környezeti hatással. "
+            
+        if hsi >= 80:
+            explanation += "💚 Kiváló tápanyag-értékkel. "
+        elif hsi >= 60:
+            explanation += "⚖️ Kiegyensúlyozott összetevőkkel. "
+        
+        if category:
+            explanation += f"🏷️ Kategória: {category}. "
+        
+        if search_query.strip():
+            explanation += f"✨ Illeszkedik a '{search_query}' kereséshez."
+        
+        return explanation
 # =============================================================================
 # GLOBÁLIS OBJEKTUMOK
 # =============================================================================
