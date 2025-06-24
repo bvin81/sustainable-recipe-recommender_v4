@@ -7,6 +7,7 @@ import sqlite3  # ← FONTOS!
 import os
 import random
 import json
+import traceback
 from pathlib import Path
 from flask import Blueprint, render_template, request, session, redirect, url_for, jsonify
 
@@ -732,13 +733,82 @@ class RecommendationEngine:
 # =============================================================================
 
 db = EnhancedDatabase()
-# Initialize recommender with fallback
+# Initialize recommender with JSON recipe data - FIXED
 try:
-    recommender = RecommendationEngine([])  # Empty list initially, will be loaded later
-    print("✅ Recommender initialized successfully")
+    print("🔄 Loading recipes from hungarian_recipes.json...")
+    
+    # Try to load from JSON file
+    recipes_data = []
+    json_path = project_root / "hungarian_recipes.json"
+    
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            recipes_data = json.load(f)
+        
+        print(f"✅ Loaded {len(recipes_data)} recipes from JSON file")
+        
+        # Ensure each recipe has required fields for enhanced system
+        for i, recipe in enumerate(recipes_data):
+            if 'id' not in recipe:
+                recipe['id'] = str(i + 1)
+            if 'HSI' not in recipe:
+                recipe['HSI'] = recipe.get('hsi_normalized', 70)
+            if 'ESI' not in recipe:
+                recipe['ESI'] = recipe.get('esi_inverted', 70)
+            if 'PPI' not in recipe:
+                recipe['PPI'] = recipe.get('ppi_normalized', 70)
+            if 'composite_score' not in recipe:
+                recipe['composite_score'] = (recipe.get('HSI', 70) + recipe.get('ESI', 70) + recipe.get('PPI', 70)) / 3
+        
+    except FileNotFoundError:
+        print(f"⚠️ JSON file not found at {json_path}")
+        # Fallback to sample data
+        recipes_data = [
+            {
+                'id': '1',
+                'name': 'Magyar Gulyás',
+                'ingredients': 'marhahús, hagyma, paprika, burgonya, paradicsom',
+                'HSI': 75,
+                'ESI': 60,
+                'PPI': 90,
+                'composite_score': 75,
+                'category': 'hagyományos'
+            },
+            {
+                'id': '2',
+                'name': 'Egészséges Saláta',
+                'ingredients': 'saláta, paradicsom, uborka, olívaolaj, citrom',
+                'HSI': 95,
+                'ESI': 85,
+                'PPI': 70,
+                'composite_score': 83,
+                'category': 'egészséges'
+            },
+            {
+                'id': '3',
+                'name': 'Zöldséges Rizottó',
+                'ingredients': 'rizs, sárgarépa, borsó, hagyma, sajt',
+                'HSI': 80,
+                'ESI': 75,
+                'PPI': 85,
+                'composite_score': 80,
+                'category': 'vegetáriánus'
+            }
+        ]
+        print(f"🔧 Using {len(recipes_data)} sample Hungarian recipes as fallback")
+    
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON parsing error: {e}")
+        recipes_data = []
+    
+    recommender = RecommendationEngine(recipes_data)
+    print(f"✅ Recommender initialized successfully with {len(recipes_data)} Hungarian recipes")
+    
 except Exception as e:
     print(f"❌ Recommender initialization failed: {e}")
-    recommender = None
+    print(f"🔧 Traceback: {traceback.format_exc()}")
+    # Final fallback
+    recommender = RecommendationEngine([])
 
 def get_user_version():
     """A/B/C verzió kiválasztása"""
