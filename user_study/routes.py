@@ -1899,6 +1899,136 @@ def export_statistical_csv():
         response.headers['Content-Disposition'] = f'attachment; filename=fallback_data_{datetime.now().strftime("%Y%m%d")}.csv'
         return response
 
+# 🚀 ÚJ ROUTE - GARANTÁLTAN MŰKÖDIK
+# Add hozzá ezt a user_study/routes.py fájl végére:
+
+@user_study_bp.route('/admin/export/postgresql_csv')
+def export_postgresql_csv():
+    """PostgreSQL CSV export - új route"""
+    try:
+        import csv
+        import io
+        from datetime import datetime
+        
+        print("🔍 Starting PostgreSQL CSV export...")
+        
+        database_url = os.environ.get('DATABASE_URL')
+        
+        if not database_url:
+            return "No DATABASE_URL found", 500
+            
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        
+        conn = psycopg2.connect(database_url, sslmode='require')
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        print("🐘 Connected to PostgreSQL")
+        
+        # USERS tábla
+        cursor.execute("SELECT user_id, version, display_name FROM users ORDER BY user_id")
+        users = cursor.fetchall()
+        print(f"📊 Users: {len(users)}")
+        
+        # USER_PROFILES tábla
+        cursor.execute("SELECT user_id, age_group, education, cooking_frequency, sustainability_awareness FROM user_profiles")
+        profiles_list = cursor.fetchall()
+        profiles = {row['user_id']: dict(row) for row in profiles_list}
+        print(f"📊 Profiles: {len(profiles)}")
+        
+        # QUESTIONNAIRE tábla
+        cursor.execute("SELECT user_id, system_usability, recommendation_quality, trust_level, explanation_clarity, sustainability_importance, overall_satisfaction, additional_comments FROM questionnaire")
+        questionnaire_list = cursor.fetchall()
+        questionnaires = {row['user_id']: dict(row) for row in questionnaire_list}
+        print(f"📊 Questionnaires: {len(questionnaires)}")
+        
+        # RECIPE_RATINGS tábla
+        cursor.execute("SELECT user_id, recipe_id, rating FROM recipe_ratings ORDER BY user_id")
+        ratings = cursor.fetchall()
+        print(f"📊 Ratings: {len(ratings)}")
+        
+        cursor.close()
+        conn.close()
+        
+        # CSV építés
+        csv_rows = []
+        
+        for user in users:
+            user_id = user['user_id']
+            profile = profiles.get(user_id, {})
+            questionnaire = questionnaires.get(user_id, {})
+            user_ratings = [r for r in ratings if r['user_id'] == user_id]
+            
+            if user_ratings:
+                # Minden rating-hez egy sor
+                for rating in user_ratings:
+                    csv_rows.append({
+                        'user_id': user_id,
+                        'group': user.get('version', ''),
+                        'age': profile.get('age_group', ''),
+                        'education_level': profile.get('education', ''),
+                        'cooking_frequency': profile.get('cooking_frequency', ''),
+                        'importance_sustainability': profile.get('sustainability_awareness', ''),
+                        'recipeid': rating.get('recipe_id', ''),
+                        'health_score': '',
+                        'env_score': '',
+                        'meal_score': '',
+                        'composite_score': '',
+                        'rating': rating.get('rating', ''),
+                        'usability': questionnaire.get('system_usability', ''),
+                        'quality': questionnaire.get('recommendation_quality', ''),
+                        'trust': questionnaire.get('trust_level', ''),
+                        'satisfaction': questionnaire.get('overall_satisfaction', ''),
+                        'comment': questionnaire.get('additional_comments', '')
+                    })
+            else:
+                # Nincs rating - demographic sor
+                csv_rows.append({
+                    'user_id': user_id,
+                    'group': user.get('version', ''),
+                    'age': profile.get('age_group', ''),
+                    'education_level': profile.get('education', ''),
+                    'cooking_frequency': profile.get('cooking_frequency', ''),
+                    'importance_sustainability': profile.get('sustainability_awareness', ''),
+                    'recipeid': '',
+                    'health_score': '',
+                    'env_score': '',
+                    'meal_score': '',
+                    'composite_score': '',
+                    'rating': '',
+                    'usability': questionnaire.get('system_usability', ''),
+                    'quality': questionnaire.get('recommendation_quality', ''),
+                    'trust': questionnaire.get('trust_level', ''),
+                    'satisfaction': questionnaire.get('overall_satisfaction', ''),
+                    'comment': questionnaire.get('additional_comments', '')
+                })
+        
+        # CSV output
+        output = io.StringIO()
+        if csv_rows:
+            writer = csv.DictWriter(output, fieldnames=csv_rows[0].keys())
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        else:
+            # Empty fallback
+            writer = csv.writer(output)
+            writer.writerow(['user_id', 'group', 'age', 'education_level', 'cooking_frequency', 'importance_sustainability', 'recipeid', 'health_score', 'env_score', 'meal_score', 'composite_score', 'rating', 'usability', 'quality', 'trust', 'satisfaction', 'comment'])
+        
+        output.seek(0)
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename=postgresql_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        print(f"✅ PostgreSQL CSV export completed: {len(csv_rows)} rows")
+        return response
+        
+    except Exception as e:
+        print(f"❌ PostgreSQL CSV export error: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"PostgreSQL CSV export error: {str(e)}", 500
+
+
 # Export
 __all__ = ['user_study_bp']
 
