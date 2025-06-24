@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajánlórendszer Metrikák Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.2em;
+        }
+
+        .header p {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 1.1em;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .status-enhanced {
+            background: #27ae60;
+            color: white;
+        }
+
+        .status-basic {
+            background: #f39c12;
+            color: white;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .metric-card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            display: flex;
+            align-items: center;
+        }
+
+        .metric-card .icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #27ae60;
+            margin-bottom: 10px;
+        }
+
+        .metric-description {
+            color: #7f8c8d;
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+
+        .metric-change {
+            margin-top: 10px;
+            font-size: 0.9em;
+            padding: 5px 10px;
+            border-radius: 10px;
+        }
+
+        .change-positive {
+            background: #d5f4e6;
+            color: #27ae60;
+        }
+
+        .change-negative {
+            background: #fadbd8;
+            color: #e74c3c;
+        }
+
+        .change-neutral {
+            background: #fdeaa7;
+            color: #f39c12;
+        }
+
+        .detailed-metrics {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            margin-bottom: 30px;
+        }
+
+        .detailed-metrics h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .metrics-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .metrics-table th,
+        .metrics-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .metrics-table th {
+            background: #f8f9fa;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .metrics-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .progress-bar {
+            background: #ecf0f1;
+            border-radius: 10px;
+            height: 8px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #27ae60, #2ecc71);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .refresh-btn {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .loading {
+            text-align: center;
+            color: #7f8c8d;
+            padding: 20px;
+        }
+
+        .error-message {
+            background: #fadbd8;
+            color: #e74c3c;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .success-message {
+            background: #d5f4e6;
+            color: #27ae60;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .chart-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+            min-height: 300px;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+            
+            .metric-value {
+                font-size: 2em;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+        }
+
+        /* Animation for loading */
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 1; }
+            100% { opacity: 0.6; }
+        }
+
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                📊 Ajánlórendszer Teljesítmény Dashboard
+                {% if enhanced_available %}
+                    <span class="status-indicator status-enhanced">Enhanced ✓</span>
+                {% else %}
+                    <span class="status-indicator status-basic">Basic Mode</span>
+                {% endif %}
+            </h1>
+            <p>Valós idejű metrikák és teljesítmény monitoring</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button class="refresh-btn" onclick="refreshMetrics()">🔄 Frissítés</button>
+            <button class="refresh-btn" onclick="exportData()">📊 Export</button>
+            <button class="refresh-btn" onclick="window.location.href='/'">🏠 Főoldal</button>
+        </div>
+
+        <!-- Key Metrics Grid -->
+        <div class="metrics-grid" id="keyMetrics">
+            {% if dashboard_data.key_metrics %}
+                {% for metric_name, metric_data in dashboard_data.key_metrics.items() %}
+                <div class="metric-card">
+                    <h3>
+                        <span class="icon">
+                            {% if 'Precision' in metric_name %}📈
+                            {% elif 'Diverzitás' in metric_name %}🌈
+                            {% elif 'Hasonlóság' in metric_name %}🎯
+                            {% elif 'Fenntarthatóság' in metric_name %}🌱
+                            {% else %}📊{% endif %}
+                        </span>
+                        {{ metric_name }}
+                    </h3>
+                    <div class="metric-value">{{ "%.3f"|format(metric_data.value) }}</div>
+                    <div class="metric-description">
+                        {{ metric_data.count }} ajánlás alapján
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ (metric_data.value * 100)|round }}%"></div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="metric-card">
+                    <h3><span class="icon">⏳</span> Betöltés...</h3>
+                    <div class="metric-description">Metrikák betöltése folyamatban</div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Overall Statistics -->
+        <div class="detailed-metrics">
+            <h2>📈 Összesített Statisztikák</h2>
+            {% if dashboard_data %}
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3><span class="icon">🎯</span> Összes Ajánlás</h3>
+                    <div class="metric-value">{{ dashboard_data.total_recommendations or 0 }}</div>
+                    <div class="metric-description">Generált ajánlások száma</div>
+                </div>
+                <div class="metric-card">
+                    <h3><span class="icon">👥</span> Aktív Munkamenetek</h3>
+                    <div class="metric-value">{{ dashboard_data.total_sessions or 0 }}</div>
+                    <div class="metric-description">Felhasználói munkamenetek</div>
+                </div>
+                <div class="metric-card">
+                    <h3><span class="icon">⚡</span> Átlagos Teljesítmény</h3>
+                    <div class="metric-value">
+                        {% if dashboard_data.key_metrics %}
+                            {{ "%.2f"|format((dashboard_data.key_metrics.values() | map(attribute='value') | list | sum) / (dashboard_data.key_metrics|length)) }}
+                        {% else %}
+                            0.00
+                        {% endif %}
+                    </div>
+                    <div class="metric-description">Normalizált teljesítmény index</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Detailed Evaluation Summary -->
+        {% if evaluation_summary and evaluation_summary.average_metrics %}
+        <div class="detailed-metrics">
+            <h2>🔍 Részletes Értékelési Összefoglaló</h2>
+            <p><strong>Utolsó {{ evaluation_summary.recent_evaluations }} értékelés alapján</strong></p>
+            
+            <table class="metrics-table">
+                <thead>
+                    <tr>
+                        <th>Metrika</th>
+                        <th>Átlag</th>
+                        <th>Szórás</th>
+                        <th>Minimum</th>
+                        <th>Maximum</th>
+                        <th>Teljesítmény</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for metric_name, metric_stats in evaluation_summary.average_metrics.items() %}
+                    <tr>
+                        <td><strong>{{ metric_name.replace('_', ' ').title() }}</strong></td>
+                        <td>{{ "%.4f"|format(metric_stats.mean) }}</td>
+                        <td>{{ "%.4f"|format(metric_stats.std) }}</td>
+                        <td>{{ "%.4f"|format(metric_stats.min) }}</td>
+                        <td>{{ "%.4f"|format(metric_stats.max) }}</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: {{ (metric_stats.mean * 100)|round }}%"></div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Real-time Chart Container -->
+        <div class="chart-container" id="chartContainer">
+            <h2>📈 Teljesítmény Trend</h2>
+            <div id="performanceChart">
+                <div class="loading">Grafikon betöltése...</div>
+            </div>
+        </div>
+
+        <!-- System Status -->
+        <div class="detailed-metrics">
+            <h2>🔧 Rendszer Állapot</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3><span class="icon">🚀</span> Ajánló Algoritmus</h3>
+                    <div class="metric-description">
+                        {% if enhanced_available %}
+                            <div class="success-message">
+                                ✅ Enhanced Content-Based Filtering aktív
+                                <br>• TF-IDF vektorizálás
+                                <br>• Multi-metrikus hasonlóság
+                                <br>• Fenntarthatósági boost
+                                <br>• Diverzitás optimalizálás
+                            </div>
+                        {% else %}
+                            <div class="error-message">
+                                ⚠️ Alapszintű ajánló rendszer
+                                <br>Enhanced modulok nem elérhetők
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="metric-card">
+                    <h3><span class="icon">📊</span> Értékelési Rendszer</h3>
+                    <div class="metric-description">
+                        {% if enhanced_available %}
+                            <div class="success-message">
+                                ✅ Comprehensive Evaluation aktív
+                                <br>• Precision/Recall/F1-score
+                                <br>• Diverzitás metrikák
+                                <br>• Fenntarthatósági értékelés
+                                <br>• Valós idejű tracking
+                            </div>
+                        {% else %}
+                            <div class="error-message">
+                                ⚠️ Alapszintű értékelés
+                                <br>Enhanced metrikák nem elérhetők
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Endpoints Info -->
+        <div class="detailed-metrics">
+            <h2>🔗 API Végpontok</h2>
+            <table class="metrics-table">
+                <thead>
+                    <tr>
+                        <th>Végpont</th>
+                        <th>Módszer</th>
+                        <th>Leírás</th>
+                        <th>Állapot</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>/api/enhanced-recommendations</code></td>
+                        <td>POST</td>
+                        <td>Enhanced ajánlások kérése</td>
+                        <td>
+                            {% if enhanced_available %}
+                                <span class="change-positive">✓ Aktív</span>
+                            {% else %}
+                                <span class="change-negative">✗ Inaktív</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>/api/metrics-dashboard</code></td>
+                        <td>GET</td>
+                        <td>Dashboard metrikák</td>
+                        <td>
+                            {% if enhanced_available %}
+                                <span class="change-positive">✓ Aktív</span>
+                            {% else %}
+                                <span class="change-negative">✗ Inaktív</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><code>/api/evaluation-summary</code></td>
+                        <td>GET</td>
+                        <td>Értékelési összefoglaló</td>
+                        <td>
+                            {% if enhanced_available %}
+                                <span class="change-positive">✓ Aktív</span>
+                            {% else %}
+                                <span class="change-negative">✗ Inaktív</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let metricsData = {};
+        let refreshInterval;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeDashboard();
+            startAutoRefresh();
+        });
+
+        function initializeDashboard() {
+            console.log('🚀 Dashboard inicializálása...');
+            refreshMetrics();
+            
+            // Load performance chart if enhanced features are available
+            {% if enhanced_available %}
+            loadPerformanceChart();
+            {% endif %}
+        }
+
+        function refreshMetrics() {
+            console.log('🔄 Metrikák frissítése...');
+            showLoading();
+            
+            // Fetch latest metrics
+            Promise.all([
+                fetchDashboardData(),
+                fetchEvaluationSummary()
+            ]).then(([dashboardData, evaluationData]) => {
+                updateMetricsDisplay(dashboardData, evaluationData);
+                hideLoading();
+                showSuccessMessage('Metrikák frissítve!');
+            }).catch(error => {
+                console.error('❌ Metrika frissítés hiba:', error);
+                hideLoading();
+                showErrorMessage('Metrika frissítés sikertelen: ' + error.message);
+            });
+        }
+
+        function fetchDashboardData() {
+            return fetch('/api/metrics-dashboard')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Dashboard API hiba: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        return data.data;
+                    } else {
+                        throw new Error(data.message || 'API hiba');
+                    }
+                });
+        }
+
+        function fetchEvaluationSummary() {
+            return fetch('/api/evaluation-summary')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Evaluation API hiba: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        return data.data;
+                    } else {
+                        throw new Error(data.message || 'API hiba');
+                    }
+                });
+        }
+
+        function updateMetricsDisplay(dashboardData, evaluationData) {
+            // Update key metrics
+            if (dashboardData && dashboardData.key_metrics) {
+                updateKeyMetrics(dashboardData.key_metrics);
+            }
+            
+            // Update overall stats
+            if (dashboardData) {
+                updateOverallStats(dashboardData);
+            }
+            
+            // Update evaluation table
+            if (evaluationData && evaluationData.average_metrics) {
+                updateEvaluationTable(evaluationData.average_metrics);
+            }
+            
+            // Store data for chart updates
+            metricsData = { dashboard: dashboardData, evaluation: evaluationData };
+        }
+
+        function updateKeyMetrics(keyMetrics) {
+            const container = document.getElementById('keyMetrics');
+            if (!container) return;
+            
+            // Clear existing metrics
+            container.innerHTML = '';
+            
+            // Add updated metrics
+            for (const [metricName, metricData] of Object.entries(keyMetrics)) {
+                const card = createMetricCard(metricName, metricData);
+                container.appendChild(card);
+            }
+        }
+
+        function createMetricCard(name, data) {
+            const card = document.createElement('div');
+            card.className = 'metric-card';
+            
+            const icon = getMetricIcon(name);
+            const progressWidth = Math.min(data.value * 100, 100);
+            
+            card.innerHTML = `
+                <h3>
+                    <span class="icon">${icon}</span>
+                    ${name}
+                </h3>
+                <div class="metric-value">${data.value.toFixed(3)}</div>
+                <div class="metric-description">
+                    ${data.count} ajánlás alapján
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${progressWidth}%"></div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        function getMetricIcon(metricName) {
+            if (metricName.includes('Precision')) return '📈';
+            if (metricName.includes('Diverzitás')) return '🌈';
+            if (metricName.includes('Hasonlóság')) return '🎯';
+            if (metricName.includes('Fenntarthatóság')) return '🌱';
+            return '📊';
+        }
+
+        function updateOverallStats(data) {
+            // Update total recommendations
+            const totalRecsElement = document.querySelector('.metric-value');
+            if (totalRecsElement && data.total_recommendations !== undefined) {
+                totalRecsElement.textContent = data.total_recommendations;
+            }
+        }
+
+        function updateEvaluationTable(averageMetrics) {
+            const tableBody = document.querySelector('.metrics-table tbody');
+            if (!tableBody) return;
+            
+            tableBody.innerHTML = '';
+            
+            for (const [metricName, metricStats] of Object.entries(averageMetrics)) {
+                const row = document.createElement('tr');
+                const progressWidth = Math.min(metricStats.mean * 100, 100);
+                
+                row.innerHTML = `
+                    <td><strong>${metricName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</strong></td>
+                    <td>${metricStats.mean.toFixed(4)}</td>
+                    <td>${metricStats.std.toFixed(4)}</td>
+                    <td>${metricStats.min.toFixed(4)}</td>
+                    <td>${metricStats.max.toFixed(4)}</td>
+                    <td>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${progressWidth}%"></div>
+                        </div>
+                    </td>
+                `;
+                
+                tableBody.appendChild(row);
+            }
+        }
+
+        function loadPerformanceChart() {
+            // Simple chart implementation (lehet később Chart.js-re cserélni)
+            const chartContainer = document.getElementById('performanceChart');
+            if (!chartContainer) return;
+            
+            chartContainer.innerHTML = `
+                <div style="text-align: center; padding: 50px; color: #7f8c8d;">
+                    📈 Teljesítmény grafikon
+                    <br><br>
+                    <small>Valós idejű metrikák vizualizációja<br>
+                    (Chart.js integrálás szükséges a részletes grafikonokhoz)</small>
+                </div>
+            `;
+        }
+
+        function startAutoRefresh() {
+            // Auto-refresh every 30 seconds
+            refreshInterval = setInterval(() => {
+                console.log('🔄 Automatikus frissítés...');
+                refreshMetrics();
+            }, 30000);
+        }
+
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+
+        function exportData() {
+            console.log('📊 Adatok exportálása...');
+            
+            const exportData = {
+                timestamp: new Date().toISOString(),
+                metrics: metricsData,
+                dashboard_url: window.location.href
+            };
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                type: 'application/json'
+            });
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `metrics_export_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showSuccessMessage('Adatok exportálva!');
+        }
+
+        function showLoading() {
+            const loadingElements = document.querySelectorAll('.loading');
+            loadingElements.forEach(el => {
+                el.style.display = 'block';
+            });
+        }
+
+        function hideLoading() {
+            const loadingElements = document.querySelectorAll('.loading');
+            loadingElements.forEach(el => {
+                el.style.display = 'none';
+            });
+        }
+
+        function showSuccessMessage(message) {
+            showMessage(message, 'success');
+        }
+
+        function showErrorMessage(message) {
+            showMessage(message, 'error');
+        }
+
+        function showMessage(message, type) {
+            // Remove existing messages
+            const existingMessages = document.querySelectorAll('.temp-message');
+            existingMessages.forEach(msg => msg.remove());
+            
+            // Create new message
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `${type === 'success' ? 'success-message' : 'error-message'} temp-message`;
+            messageDiv.textContent = message;
+            messageDiv.style.position = 'fixed';
+            messageDiv.style.top = '20px';
+            messageDiv.style.right = '20px';
+            messageDiv.style.zIndex = '9999';
+            messageDiv.style.minWidth = '200px';
+            
+            document.body.appendChild(messageDiv);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 3000);
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            stopAutoRefresh();
+        });
+
+        // Expose functions for manual testing
+        window.dashboardAPI = {
+            refreshMetrics,
+            exportData,
+            startAutoRefresh,
+            stopAutoRefresh
+        };
+    </script>
+</body>
+</html>
