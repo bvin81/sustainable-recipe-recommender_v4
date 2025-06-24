@@ -43,6 +43,15 @@ import csv
 import io
 import json
 from datetime import datetime
+try:
+    from .enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
+    from .evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+    ENHANCED_MODULES_AVAILABLE = True
+    print("✅ Enhanced modules loaded successfully")
+except ImportError as e:
+    print(f"⚠️ Enhanced modules not available: {e}")
+    print("🔧 Falling back to original recommendation system")
+    ENHANCED_MODULES_AVAILABLE = False
 
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
@@ -604,203 +613,63 @@ class EnhancedDatabase:
         """Password verification"""
         return self._hash_password(password) == password_hash
         
-class HungarianJSONRecommender:
-    """Magyar receptek JSON-ből - encoding problémák nélkül"""
+class RecommendationEngine:
+    """
+    Továbbfejlesztett ajánló motor enhanced funkcionalitással
+    Backward compatible a meglévő kóddal
+    """
     
-    def __init__(self):
-        self.recipes = []
-        self.load_hungarian_json()
-        print(f"✅ Hungarian JSON Recommender initialized with {len(self.recipes)} recipes")
-    
-    def load_hungarian_json(self):
-        """JSON fájl betöltése - 100% megbízható"""
-        json_paths = [
-            "hungarian_recipes.json",
-            project_root / "hungarian_recipes.json",
-            data_dir / "hungarian_recipes.json"
-        ]
+    def __init__(self, recipes):
+        # Original initialization
+        self.recipes = recipes
         
-        for json_path in json_paths:
-            if Path(json_path).exists():
-                try:
-                    print(f"📊 Loading JSON from: {json_path}")
-                    
-                    with open(json_path, 'r', encoding='utf-8') as f:
-                        recipes_data = json.load(f)
-                    
-                    print(f"✅ JSON loaded! {len(recipes_data)} recipes")
-                    
-                    # Adatok feldolgozása
-                    self.process_json_recipes(recipes_data)
-                    return
-                    
-                except Exception as e:
-                    print(f"⚠️ Failed to load {json_path}: {e}")
-                    continue
+        # Enhanced initialization
+        self.enhanced_engine = None
+        self.metrics_tracker = MetricsTracker() if ENHANCED_MODULES_AVAILABLE else None
         
-        # Fallback
-        print("🔧 No JSON found, using sample recipes")
-        self.create_sample_recipes()
-    
-    def process_json_recipes(self, recipes_data):
-            """JSON receptek feldolgozása TELJES NORMALIZÁLÁSSAL"""
-            print(f"🔄 Processing {len(recipes_data)} recipes from JSON...")
-            
-            processed_recipes = []
-            
-            # ELSŐ LÉPÉS: Nyers adatok összegyűjtése és min/max értékek meghatározása
-            raw_esi_values = []
-            raw_hsi_values = []
-            raw_ppi_values = []
-            
-            # Értékek gyűjtése normalizáláshoz
-            for recipe in recipes_data:
-                try:
-                    esi = float(recipe.get('ESI', recipe.get('env_score', 70)))
-                    hsi = float(recipe.get('HSI', recipe.get('nutri_score', 70)))
-                    ppi = float(recipe.get('PPI', recipe.get('meal_score', 70)))
-                    
-                    raw_esi_values.append(esi)
-                    raw_hsi_values.append(hsi)
-                    raw_ppi_values.append(ppi)
-                except (ValueError, TypeError):
-                    continue
-            
-            # Min/Max értékek kiszámítása
-            esi_min, esi_max = min(raw_esi_values), max(raw_esi_values)
-            hsi_min, hsi_max = min(raw_hsi_values), max(raw_hsi_values)
-            ppi_min, ppi_max = min(raw_ppi_values), max(raw_ppi_values)
-            
-            print(f"📊 Score ranges:")
-            print(f"   ESI: {esi_min:.2f} - {esi_max:.2f}")
-            print(f"   HSI: {hsi_min:.2f} - {hsi_max:.2f}")
-            print(f"   PPI: {ppi_min:.2f} - {ppi_max:.2f}")
-            
-            # MÁSODIK LÉPÉS: Receptek feldolgozása normalizált értékekkel
-            for recipe in recipes_data:
-                try:
-                    # Alapvető mezők biztosítása
-                    raw_esi = float(recipe.get('ESI', recipe.get('env_score', 70)))
-                    raw_hsi = float(recipe.get('HSI', recipe.get('nutri_score', 70)))
-                    raw_ppi = float(recipe.get('PPI', recipe.get('meal_score', 70)))
-                    
-                    # NORMALIZÁLÁS 0-100 SKÁLÁRA: (x-min)/(max-min)*100
-                    def normalize_score(value, min_val, max_val):
-                        if max_val == min_val:  # Elkerüljük a nullával osztást
-                            return 50.0  # Középérték ha minden azonos
-                        return ((value - min_val) / (max_val - min_val)) * 100
-                    
-                    normalized_esi = normalize_score(raw_esi, esi_min, esi_max)
-                    normalized_hsi = normalize_score(raw_hsi, hsi_min, hsi_max)
-                    normalized_ppi = normalize_score(raw_ppi, ppi_min, ppi_max)
-                    
-                    processed_recipe = {
-                        'recipeid': recipe.get('recipeid', 0),
-                        'title': str(recipe.get('title', recipe.get('name', 'Névtelen recept'))),
-                        'ingredients': str(recipe.get('ingredients', '')),
-                        'instructions': str(recipe.get('instructions', '')),
-                        'category': str(recipe.get('category', 'Egyéb')),
-                        'images': self.fix_image_url(recipe.get('images', '')),
-                        # Normalizált pontszámok mentése
-                        'ESI': round(normalized_esi, 1),
-                        'HSI': round(normalized_hsi, 1),
-                        'PPI': round(normalized_ppi, 1),
-                        # Eredeti pontszámok debug céljából
-                        'raw_ESI': round(raw_esi, 1),
-                        'raw_HSI': round(raw_hsi, 1),
-                        'raw_PPI': round(raw_ppi, 1)
-                    }
-                    
-                    # KOMPOZIT SCORE SZÁMÍTÁSA - JAVÍTOTT VERZIÓ
-                    # Formula: (100 - normalized_ESI) * 0.4 + normalized_HSI * 0.4 + normalized_PPI * 0.2
-                    # Magyarázat: 
-                    # - ESI (Environmental Impact Score): alacsonyabb = jobb környezeti hatás -> (100-ESI)
-                    # - HSI (Health Score): magasabb = egészségesebb -> HSI
-                    # - PPI (Popularity/Meal Score): magasabb = népszerűbb/jobb étkezés -> PPI
-                    
-                    esi_inverted = 100 - normalized_esi  # Környezeti pontszám fordítása
-                    composite = (
-                        esi_inverted * 0.4 +           # Fordított környezeti (40%)
-                        normalized_hsi * 0.4 +         # Egészség (40%)
-                        normalized_ppi * 0.2           # Népszerűség/Étkezés (20%)
-                    )
-                    
-                    processed_recipe['composite_score'] = round(composite, 1)
-                    
-                    # Debug információ az első néhány recepthez
-                    if len(processed_recipes) < 3:
-                        print(f"🔍 Recipe: {processed_recipe['title'][:30]}...")
-                        print(f"   Raw scores: ESI={raw_esi:.1f}, HSI={raw_hsi:.1f}, PPI={raw_ppi:.1f}")
-                        print(f"   Normalized: ESI={normalized_esi:.1f}, HSI={normalized_hsi:.1f}, PPI={normalized_ppi:.1f}")
-                        print(f"   ESI inverted: {esi_inverted:.1f}")
-                        print(f"   Composite: {composite:.1f}")
-                        print(f"   Formula: ({esi_inverted:.1f}*0.4) + ({normalized_hsi:.1f}*0.4) + ({normalized_ppi:.1f}*0.2) = {composite:.1f}")
-                        print()
-                    
-                    # Csak érvényes receptek
-                    if processed_recipe['title'] and processed_recipe['ingredients']:
-                        processed_recipes.append(processed_recipe)
-                        
-                except Exception as e:
-                    print(f"⚠️ Skipping invalid recipe: {e}")
-                    continue
-            
-            self.recipes = processed_recipes
-            print(f"✅ Successfully processed {len(self.recipes)} recipes with normalized scores")
-            
-            # Összesített statisztikák
-            if self.recipes:
-                avg_composite = sum(r['composite_score'] for r in self.recipes) / len(self.recipes)
-                min_composite = min(r['composite_score'] for r in self.recipes)
-                max_composite = max(r['composite_score'] for r in self.recipes)
+        if ENHANCED_MODULES_AVAILABLE:
+            try:
+                # Convert old format to new format
+                converted_recipes = convert_old_recipe_format(recipes)
                 
-                print(f"📈 Composite score stats:")
-                print(f"   Average: {avg_composite:.1f}")
-                print(f"   Range: {min_composite:.1f} - {max_composite:.1f}")
-            
-            # Debug: első recept megjelenítése
-            if self.recipes:
-                first = self.recipes[0]
-                print(f"📝 Sample: {first['title']}")
-                print(f"📊 Final scores: ESI={first['ESI']}, HSI={first['HSI']}, PPI={first['PPI']}, Composite={first['composite_score']}")
+                # Create enhanced recommender
+                self.enhanced_engine = create_enhanced_recommender(converted_recipes)
+                
+                print(f"✅ Enhanced Recommendation Engine initialized with {len(recipes)} recipes")
+            except Exception as e:
+                print(f"❌ Failed to initialize enhanced components: {e}")
+                print("🔧 Falling back to original system")
     
-    def fix_image_url(self, image_url):
-        """Kép URL javítása"""
-        if not image_url or str(image_url).strip() in ['', 'nan', 'null', 'None']:
-            return 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300&fit=crop'
+    def recommend(self, search_query="", n_recommendations=5, version='v3'):
+        """
+        Enhanced recommend method with fallback
+        Backward compatible a meglévő kóddal
+        """
         
-        url = str(image_url).strip()
-        if url.startswith('http') and len(url) > 10:
-            return url
+        # Try enhanced recommendations first
+        if self.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
+            try:
+                session_id = session.get('user_id', 'anonymous')
+                
+                results = self.enhanced_engine.get_recommendations(
+                    user_input=search_query,
+                    version=version,
+                    n_recommendations=n_recommendations,
+                    session_id=session_id
+                )
+                
+                print(f"✅ Enhanced recommendations: {len(results['recommendations'])} items")
+                return results['recommendations']
+                
+            except Exception as e:
+                print(f"❌ Enhanced recommendation failed: {e}")
+                print("🔧 Falling back to original implementation")
         
-        # Fallback placeholder
-        return 'https://images.unsplash.com/photo-1565299624946-b28f40a0ca4b?w=400&h=300&fit=crop'
+        # Fallback to original implementation
+        return self._original_recommend(search_query, n_recommendations, version)
     
-    def search_recipes(self, query, max_results=20):
-        """Keresés magyar receptekben"""
-        if not query.strip() or not self.recipes:
-            # Ha nincs keresés, legjobb composite score szerint
-            sorted_recipes = sorted(self.recipes, key=lambda x: x.get('composite_score', 0), reverse=True)
-            return list(range(min(max_results, len(sorted_recipes))))
-        
-        search_terms = [term.strip().lower() for term in query.split(',')]
-        matching_recipes = []
-        
-        for idx, recipe in enumerate(self.recipes):
-            ingredients = recipe.get('ingredients', '').lower()
-            title = recipe.get('title', '').lower()
-            category = recipe.get('category', '').lower()
-            
-            # Keresés címben, összetevőkben és kategóriában
-            if any(term in ingredients or term in title or term in category for term in search_terms if term):
-                matching_recipes.append((idx, recipe))
-        
-        # Rendezés composite score szerint
-        matching_recipes.sort(key=lambda x: x[1].get('composite_score', 0), reverse=True)
-        return [idx for idx, recipe in matching_recipes[:max_results]]
-    
-    def get_recommendations(self, version='v1', search_query="", n_recommendations=5):
-        """Fő ajánlási algoritmus"""
+    def _original_recommend(self, search_query="", n_recommendations=5, version='v3'):
+        """Original recommendation implementation (EXISTING CODE)"""
         
         if not self.recipes:
             print("❌ No recipes available")
@@ -808,7 +677,7 @@ class HungarianJSONRecommender:
         
         print(f"🔍 Getting recommendations: {len(self.recipes)} total recipes available")
         
-        # Keresés vagy top recipes
+        # Keresés vagy top recipes (EXISTING LOGIC)
         if search_query.strip():
             indices = self.search_recipes(search_query, max_results=20)
             candidates = [self.recipes[i] for i in indices[:n_recommendations]]
@@ -826,7 +695,7 @@ class HungarianJSONRecommender:
         # Deep copy hogy ne módosítsuk az eredeti adatokat
         recommendations = [recipe.copy() for recipe in candidates]
         
-        # Verzió-specifikus információ hozzáadása
+        # Verzió-specifikus információ hozzáadása (EXISTING LOGIC)
         for rec in recommendations:
             if version == 'v1':
                 rec['show_scores'] = False
@@ -844,47 +713,11 @@ class HungarianJSONRecommender:
         print(f"✅ Returning {len(recommendations)} recommendations")
         return recommendations
     
-    def generate_explanation(self, recipe, search_query=""):
-        """Magyarázat generálás v3 verzióhoz"""
-        composite = recipe.get('composite_score', 70)
-        esi = recipe.get('ESI', 70)
-        hsi = recipe.get('HSI', 70)
-        category = recipe.get('category', '')
-        
-        explanation = f"🎯 Ezt a receptet {composite:.1f}/100 összpontszám alapján ajánljuk. "
-        
-        if esi >= 80:
-            explanation += "🌱 Kiváló környezeti értékeléssel! "
-        elif esi >= 60:
-            explanation += "🌿 Jó környezeti értékeléssel. "
-        else:
-            explanation += "🔸 Közepes környezeti hatással. "
-            
-        if hsi >= 80:
-            explanation += "💚 Kiváló tápanyag-értékkel. "
-        elif hsi >= 60:
-            explanation += "⚖️ Kiegyensúlyozott összetevőkkel. "
-        
-        if category:
-            explanation += f"🏷️ Kategória: {category}. "
-        
-        if search_query.strip():
-            explanation += f"✨ Illeszkedik a '{search_query}' kereséshez."
-        
-        return explanation
-    
-    def create_sample_recipes(self):
-        """Fallback sample receptek"""
-        self.recipes = [
-            {
-                'recipeid': 1, 'title': 'Gulyásleves',
-                'ingredients': 'marhahús, hagyma, paprika, paradicsom, burgonya',
-                'instructions': 'Hagyományos magyar gulyásleves...',
-                'category': 'Leves', 
-                'images': 'https://images.unsplash.com/photo-1547592180-85f173990554?w=400',
-                'ESI': 45, 'HSI': 75, 'PPI': 85, 'composite_score': 68
-            }
-        ]
+    def get_enhanced_metrics(self):
+        """Enhanced metrikák lekérdezése"""
+        if self.enhanced_engine and hasattr(self.enhanced_engine, 'get_metrics_dashboard_data'):
+            return self.enhanced_engine.get_metrics_dashboard_data()
+        return None
 
 # =============================================================================
 # GLOBÁLIS OBJEKTUMOK
@@ -1702,7 +1535,116 @@ def export_statistical_csv():
         import traceback
         traceback.print_exc()
         return f"Statistical CSV export error: {str(e)}", 500
+# =============================================
+# ENHANCED API ENDPOINTS - ADD THESE AT THE END
+# =============================================
 
+@user_study_bp.route('/api/enhanced-recommendations', methods=['POST'])
+def enhanced_recommendations():
+    """Enhanced recommendations API endpoint"""
+    try:
+        data = request.get_json() or {}
+        
+        # Get parameters
+        user_input = data.get('search_query', '')
+        user_preferences = data.get('user_preferences', {})
+        version = data.get('version', 'v3')
+        n_recommendations = data.get('n_recommendations', 5)
+        session_id = session.get('user_id', 'anonymous')
+        
+        # Get recommendations using enhanced engine
+        if hasattr(recommender, 'enhanced_engine') and recommender.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
+            results = recommender.enhanced_engine.get_recommendations(
+                user_input=user_input,
+                user_preferences=user_preferences,
+                version=version,
+                n_recommendations=n_recommendations,
+                session_id=session_id
+            )
+            
+            return jsonify({
+                'status': 'success',
+                'data': results
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Enhanced recommendations not available'
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@user_study_bp.route('/api/metrics-dashboard')
+def metrics_dashboard_api():
+    """Metrics dashboard API endpoint"""
+    try:
+        if hasattr(recommender, 'enhanced_engine') and recommender.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
+            dashboard_data = recommender.enhanced_engine.get_metrics_dashboard_data()
+            return jsonify({
+                'status': 'success',
+                'data': dashboard_data
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Enhanced metrics not available'
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@user_study_bp.route('/api/evaluation-summary')
+def evaluation_summary():
+    """Evaluation summary API endpoint"""
+    try:
+        if hasattr(recommender, 'enhanced_engine') and recommender.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
+            summary = recommender.enhanced_engine.get_evaluation_summary()
+            return jsonify({
+                'status': 'success',
+                'data': summary
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Enhanced evaluation not available'
+            }), 503
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@user_study_bp.route('/dashboard')
+def metrics_dashboard_page():
+    """Metrics dashboard page"""
+    try:
+        dashboard_data = {}
+        evaluation_summary = {}
+        
+        if hasattr(recommender, 'enhanced_engine') and recommender.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
+            dashboard_data = recommender.enhanced_engine.get_metrics_dashboard_data()
+            evaluation_summary = recommender.enhanced_engine.get_evaluation_summary()
+        
+        return render_template('metrics_dashboard.html', 
+                             dashboard_data=dashboard_data,
+                             evaluation_summary=evaluation_summary,
+                             enhanced_available=ENHANCED_MODULES_AVAILABLE)
+                             
+    except Exception as e:
+        return render_template('error.html', 
+                             error_message=f"Dashboard error: {e}") if 'error.html' in [t.name for t in current_app.jinja_env.list_templates()] else f"Dashboard error: {e}"
+
+# =============================================
+# END OF ENHANCED API ENDPOINTS
+# =============================================
 
 # Export
 __all__ = ['user_study_bp']
