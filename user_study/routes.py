@@ -1276,196 +1276,7 @@ def export_json():
 
 # Új admin export route hozzáadása a user_study/routes.py fájlhoz
 
-@user_study_bp.route('/admin/export/statistical_csv')
-def export_statistical_csv():
-    """PostgreSQL kompatibilis statisztikai CSV export"""
-    try:
-        print("🔍 Starting PostgreSQL statistical CSV export...")
-        
-        # Heroku PostgreSQL connection - környezeti változó alapján
-        database_url = os.environ.get('DATABASE_URL')
-        
-        if database_url:
-            # PostgreSQL kapcsolat
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
-            
-            print("🐘 Using PostgreSQL connection")
-            conn = psycopg2.connect(database_url, sslmode='require')
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Participants query
-            cursor.execute("""
-                SELECT user_id, age_group, education, cooking_frequency, 
-                       sustainability_awareness, version, is_completed, created_at
-                FROM participants 
-                ORDER BY user_id
-            """)
-            participants = cursor.fetchall()
-            print(f"📊 Found {len(participants)} participants")
-            
-            # Questionnaire query
-            cursor.execute("""
-                SELECT user_id, system_usability, recommendation_quality, trust_level,
-                       explanation_clarity, sustainability_importance, overall_satisfaction,
-                       additional_comments
-                FROM questionnaire
-            """)
-            questionnaire_rows = cursor.fetchall()
-            questionnaires = {row['user_id']: dict(row) for row in questionnaire_rows}
-            print(f"📊 Found {len(questionnaires)} questionnaires")
-            
-            # Interactions query
-            cursor.execute("""
-                SELECT user_id, recipe_id, rating, explanation_helpful, view_time_seconds
-                FROM interactions
-                ORDER BY user_id, timestamp
-            """)
-            interactions = cursor.fetchall()
-            print(f"📊 Found {len(interactions)} interactions")
-            
-            cursor.close()
-            conn.close()
-            
-        else:
-            # Fallback SQLite connection
-            print("🗃️ Using SQLite fallback")
-            conn = db.get_connection()
-            
-            participants = [dict(row) for row in conn.execute("""
-                SELECT user_id, age_group, education, cooking_frequency, 
-                       sustainability_awareness, version, is_completed, created_at
-                FROM participants ORDER BY user_id
-            """).fetchall()]
-            
-            questionnaire_rows = [dict(row) for row in conn.execute("""
-                SELECT user_id, system_usability, recommendation_quality, trust_level,
-                       explanation_clarity, sustainability_importance, overall_satisfaction,
-                       additional_comments FROM questionnaire
-            """).fetchall()]
-            questionnaires = {row['user_id']: row for row in questionnaire_rows}
-            
-            interactions = [dict(row) for row in conn.execute("""
-                SELECT user_id, recipe_id, rating, explanation_helpful, view_time_seconds
-                FROM interactions ORDER BY user_id, timestamp
-            """).fetchall()]
-            
-            conn.close()
-        
-        # CSV építés
-        import csv
-        import io
-        from datetime import datetime
-        
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Header
-        headers = [
-            'user_id', 'group', 'age', 'education_level', 'cooking_frequency',
-            'importance_sustainability', 'recipeid', 'health_score', 'env_score', 
-            'meal_score', 'composite_score', 'rating', 'usability', 'quality',
-            'trust', 'satisfaction', 'comment'
-        ]
-        writer.writerow(headers)
-        
-        # Adatok feldolgozása
-        for participant in participants:
-            user_id = participant['user_id']
-            
-            # Alapadatok
-            base_data = {
-                'user_id': user_id,
-                'group': participant.get('version', 'unknown'),
-                'age': participant.get('age_group', 'unknown'),
-                'education_level': participant.get('education', 'unknown'),
-                'cooking_frequency': participant.get('cooking_frequency', 'unknown'),
-                'importance_sustainability': participant.get('sustainability_awareness', 0)
-            }
-            
-            # Kérdőív adatok
-            questionnaire = questionnaires.get(user_id, {})
-            base_data.update({
-                'usability': questionnaire.get('system_usability', ''),
-                'quality': questionnaire.get('recommendation_quality', ''),
-                'trust': questionnaire.get('trust_level', ''),
-                'satisfaction': questionnaire.get('overall_satisfaction', ''),
-                'comment': questionnaire.get('additional_comments', '')
-            })
-            
-            # Interakciók
-            user_interactions = [i for i in interactions if i['user_id'] == user_id]
-            
-            if user_interactions:
-                # Minden interakcióhoz egy sor
-                for interaction in user_interactions:
-                    csv_row = [
-                        base_data['user_id'],
-                        base_data['group'], 
-                        base_data['age'],
-                        base_data['education_level'],
-                        base_data['cooking_frequency'],
-                        base_data['importance_sustainability'],
-                        interaction.get('recipe_id', ''),
-                        '',  # health_score - nincs recipe DB
-                        '',  # env_score
-                        '',  # meal_score  
-                        '',  # composite_score
-                        interaction.get('rating', ''),
-                        base_data['usability'],
-                        base_data['quality'],
-                        base_data['trust'],
-                        base_data['satisfaction'],
-                        base_data['comment']
-                    ]
-                    writer.writerow(csv_row)
-            else:
-                # Nincs interakció - csak demográfiai sor
-                csv_row = [
-                    base_data['user_id'],
-                    base_data['group'],
-                    base_data['age'], 
-                    base_data['education_level'],
-                    base_data['cooking_frequency'],
-                    base_data['importance_sustainability'],
-                    '',  # recipeid
-                    '',  # health_score
-                    '',  # env_score
-                    '',  # meal_score
-                    '',  # composite_score
-                    '',  # rating
-                    base_data['usability'],
-                    base_data['quality'],
-                    base_data['trust'],
-                    base_data['satisfaction'],
-                    base_data['comment']
-                ]
-                writer.writerow(csv_row)
-        
-        # Response
-        output.seek(0)
-        response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-        
-        print(f"✅ Statistical CSV export completed: {len(participants)} participants")
-        return response
-        
-    except Exception as e:
-        print(f"❌ Statistical CSV export error: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Egyszerű CSV fallback
-        fallback_csv = """user_id,group,age,education_level,cooking_frequency,importance_sustainability,recipeid,health_score,env_score,meal_score,composite_score,rating,usability,quality,trust,satisfaction,comment
-1,v1,25-35,University,Weekly,4,,,,,,4,4,4,4,4,Good system
-2,v2,35-45,High School,Daily,3,,,,,,5,5,5,5,5,Excellent
-3,v3,18-25,University,Rarely,5,,,,,,3,3,3,3,3,Average"""
-        
-        response = make_response(fallback_csv)
-        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=fallback_data_{datetime.datetime.now().strftime("%Y%m%d")}.csv'
-        return response
+
 
 
 # 🔧 EGYSZERŰ BACKUP EXPORT (ha a fenti nem működik)
@@ -1732,185 +1543,15 @@ def debug_tables():
         import traceback
         return f"<h2>Debug tables error:</h2><pre>{e}\n\n{traceback.format_exc()}</pre>"
 
-
-# 🔧 CSERÉLD KI A STATISTICAL_CSV ROUTE-OT
-# GitHub → user_study/routes.py → keresendő rész:
-
 @user_study_bp.route('/admin/export/statistical_csv')
 def export_statistical_csv():
-    """Statisztikai elemzésre alkalmas CSV export - PostgreSQL kompatibilis"""
-    try:
-        print("🔍 Starting statistical CSV export...")
-        
-        # TÖRÖLD KI A TELJES RÉGI FÜGGVÉNYT
-        # ÉS CSERÉLD KI ERRE:
-        
-        import csv
-        import io
-        from datetime import datetime
-        
-        database_url = os.environ.get('DATABASE_URL')
-        
-        if database_url:
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
-            
-            conn = psycopg2.connect(database_url, sslmode='require')
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
-            print("🐘 Using PostgreSQL with correct table names")
-            
-            # USERS tábla (user_id, version)
-            cursor.execute("""
-                SELECT user_id, version, display_name, created_at, is_active
-                FROM users 
-                ORDER BY user_id
-            """)
-            users = cursor.fetchall()
-            print(f"📊 Found {len(users)} users")
-            
-            # USER_PROFILES tábla (demográfiai adatok)
-            cursor.execute("""
-                SELECT user_id, age_group, education, cooking_frequency, sustainability_awareness
-                FROM user_profiles
-            """)
-            user_profiles = {row['user_id']: dict(row) for row in cursor.fetchall()}
-            print(f"📊 Found {len(user_profiles)} user profiles")
-            
-            # QUESTIONNAIRE tábla (kérdőív eredmények)
-            cursor.execute("""
-                SELECT user_id, system_usability, recommendation_quality, trust_level,
-                       explanation_clarity, sustainability_importance, overall_satisfaction,
-                       additional_comments
-                FROM questionnaire
-            """)
-            questionnaires = {row['user_id']: dict(row) for row in cursor.fetchall()}
-            print(f"📊 Found {len(questionnaires)} questionnaires")
-            
-            # RECIPE_RATINGS tábla (interakciók)
-            cursor.execute("""
-                SELECT rating_id, user_id, recipe_id, rating, timestamp
-                FROM recipe_ratings
-                ORDER BY user_id, timestamp
-            """)
-            recipe_ratings = cursor.fetchall()
-            print(f"📊 Found {len(recipe_ratings)} recipe ratings")
-            
-            cursor.close()
-            conn.close()
-            
-        else:
-            return "No DATABASE_URL found", 500
-        
-        # CSV adatok építése
-        csv_data = []
-        
-        for user in users:
-            user_id = user['user_id']
-            
-            # User alapadatok
-            profile = user_profiles.get(user_id, {})
-            questionnaire = questionnaires.get(user_id, {})
-            
-            # User értékelései
-            user_ratings = [r for r in recipe_ratings if r['user_id'] == user_id]
-            
-            if user_ratings:
-                # Minden értékeléshez egy sor
-                for rating in user_ratings:
-                    row = {
-                        'user_id': user_id,
-                        'group': user.get('version', ''),
-                        'age': profile.get('age_group', ''),
-                        'education_level': profile.get('education', ''),
-                        'cooking_frequency': profile.get('cooking_frequency', ''),
-                        'importance_sustainability': profile.get('sustainability_awareness', ''),
-                        'recipeid': rating.get('recipe_id', ''),
-                        'health_score': '',  # Nincs recipe táblánk
-                        'env_score': '',
-                        'meal_score': '',
-                        'composite_score': '',
-                        'rating': rating.get('rating', ''),
-                        'usability': questionnaire.get('system_usability', ''),
-                        'quality': questionnaire.get('recommendation_quality', ''),
-                        'trust': questionnaire.get('trust_level', ''),
-                        'satisfaction': questionnaire.get('overall_satisfaction', ''),
-                        'comment': questionnaire.get('additional_comments', '')
-                    }
-                    csv_data.append(row)
-            else:
-                # Nincs értékelés - csak demográfiai sor
-                row = {
-                    'user_id': user_id,
-                    'group': user.get('version', ''),
-                    'age': profile.get('age_group', ''),
-                    'education_level': profile.get('education', ''),
-                    'cooking_frequency': profile.get('cooking_frequency', ''),
-                    'importance_sustainability': profile.get('sustainability_awareness', ''),
-                    'recipeid': '',
-                    'health_score': '',
-                    'env_score': '',
-                    'meal_score': '',
-                    'composite_score': '',
-                    'rating': '',
-                    'usability': questionnaire.get('system_usability', ''),
-                    'quality': questionnaire.get('recommendation_quality', ''),
-                    'trust': questionnaire.get('trust_level', ''),
-                    'satisfaction': questionnaire.get('overall_satisfaction', ''),
-                    'comment': questionnaire.get('additional_comments', '')
-                }
-                csv_data.append(row)
-        
-        # CSV írás
-        if not csv_data:
-            return "Nincs adat a CSV exporthoz", 404
-        
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=[
-            'user_id', 'group', 'age', 'education_level', 'cooking_frequency',
-            'importance_sustainability', 'recipeid', 'health_score', 'env_score', 
-            'meal_score', 'composite_score', 'rating', 'usability', 'quality',
-            'trust', 'satisfaction', 'comment'
-        ])
-        writer.writeheader()
-        writer.writerows(csv_data)
-        
-        # Response
-        output.seek(0)
-        response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-        
-        print(f"✅ PostgreSQL CSV export completed: {len(csv_data)} rows")
-        return response
-        
-    except Exception as e:
-        print(f"❌ Statistical CSV export error: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Fallback CSV
-        fallback_csv = """user_id,group,age,education_level,cooking_frequency,importance_sustainability,recipeid,health_score,env_score,meal_score,composite_score,rating,usability,quality,trust,satisfaction,comment
-1,v1,25-35,University,Weekly,4,,,,,,4,4,4,4,4,Good system
-2,v2,35-45,High School,Daily,3,,,,,,5,5,5,5,5,Excellent"""
-        
-        response = make_response(fallback_csv)
-        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=fallback_data_{datetime.now().strftime("%Y%m%d")}.csv'
-        return response
-
-# 🚀 ÚJ ROUTE - GARANTÁLTAN MŰKÖDIK
-# Add hozzá ezt a user_study/routes.py fájl végére:
-
-@user_study_bp.route('/admin/export/postgresql_csv')
-def export_postgresql_csv():
-    """PostgreSQL CSV export - új route"""
+    """PostgreSQL kompatibilis statisztikai CSV export - EGYETLEN VERZIÓ"""
     try:
         import csv
         import io
         from datetime import datetime
         
-        print("🔍 Starting PostgreSQL CSV export...")
+        print("🔍 Starting PostgreSQL statistical CSV export...")
         
         database_url = os.environ.get('DATABASE_URL')
         
@@ -2017,16 +1658,17 @@ def export_postgresql_csv():
         output.seek(0)
         response = make_response(output.getvalue())
         response.headers['Content-Type'] = 'text/csv; charset=utf-8'
-        response.headers['Content-Disposition'] = f'attachment; filename=postgresql_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=statistical_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
         
         print(f"✅ PostgreSQL CSV export completed: {len(csv_rows)} rows")
         return response
         
     except Exception as e:
-        print(f"❌ PostgreSQL CSV export error: {e}")
+        print(f"❌ Statistical CSV export error: {e}")
         import traceback
         traceback.print_exc()
-        return f"PostgreSQL CSV export error: {str(e)}", 500
+        return f"Statistical CSV export error: {str(e)}", 500
+        
 
 
 # Export
