@@ -523,7 +523,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🍽️ Recept Ajánlások</h1>
+            <h1>🍽️ Recept ajánlások</h1>
             <p>Értékelje az alábbi ajánlásokat</p>
         </div>
 
@@ -535,7 +535,7 @@
 <div class="search-section">
     <div class="search-container">
         <h3>🔍 Keresés összetevők alapján</h3>
-        <p>Írja be a kívánt összetevőket vesszővel elválasztva (pl. csirke, rizs, paprika)</p>
+        <p>Írja be a kívánt összetevőket vesszővel elválasztva</p>
         
         <form method="GET" action="/study" id="searchForm">
             <div class="search-input-container">
@@ -946,14 +946,14 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
         <div class="instruction-banner">
-            <strong>📋 Feladat:</strong> Értékelje minden receptet 1-5 csillag skálán az alapján, hogy mennyire tetszik Önnek!
+            <strong>📋 Feladat:</strong> Értékeljen minden receptet 1-5 közötti skálán az alapján, hogy mennyire tetszik Önnek!
             {% if version == 'v2' or version == 'v3' %}
             <br><strong>💡 Plusz:</strong> Értékelje a magyarázatok hasznosságát is!
             {% endif %}
         </div>
 
         <div class="rating-progress">
-            <div class="progress-text">Értékelési Haladás: <span id="ratingCount">0</span>/{{ recommendations|length }}</div>
+            <div class="progress-text">Értékelési előrehaladás: <span id="ratingCount">0</span>/{{ recommendations|length }}</div>
             <div class="progress-bar-small">
                 <div class="progress-fill-small" id="ratingProgressBar" style="width: 0%;"></div>
             </div>
@@ -1074,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             
             <button id="continueBtn" class="btn" onclick="location.href='/questionnaire'" disabled>
-                📋 Folytatás a Kérdőívvel
+                📋 Folytatás a kérdőívvel
             </button>
         </div>
     </div>
