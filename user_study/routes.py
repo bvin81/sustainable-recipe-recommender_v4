@@ -1308,7 +1308,7 @@ def export_simple_csv():
             conn.close()
         else:
             # SQLite fallback
-            conn = db.get_connection()
+            conn = db._get_connection()
             participants = conn.execute("SELECT * FROM participants ORDER BY user_id").fetchall()
             columns = [description[0] for description in conn.description]
             conn.close()
@@ -1548,7 +1548,7 @@ def export_statistical_csv():
     """Statistical CSV export with recipe scores included"""
     try:
         # 1. FELHASZNÁLÓI ADATOK a PostgreSQL-ből
-        conn = db.get_connection()
+        conn = db._get_connection()
         if not conn:
             return "Database connection failed", 500
         
