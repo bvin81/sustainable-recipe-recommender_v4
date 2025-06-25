@@ -543,7 +543,7 @@
         }
 
         function fetchDashboardData() {
-            return fetch('/api/metrics-dashboard')
+            return fetch('/api/dashboard-data')
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Dashboard API hiba: ' + response.status);
@@ -560,7 +560,7 @@
         }
 
         function fetchEvaluationSummary() {
-            return fetch('/api/evaluation-summary')
+            return fetch('/api/summary-data')
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('Evaluation API hiba: ' + response.status);
