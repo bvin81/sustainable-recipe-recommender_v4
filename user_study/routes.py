@@ -2239,6 +2239,273 @@ def test_simple_metrics():
             'error_type': type(e).__name__,
             'enhanced_modules_available': ENHANCED_MODULES_AVAILABLE
         }), 500
+
+@user_study_bp.route('/api/metrics-dashboard')
+def metrics_dashboard_api():
+    """Metrics dashboard API endpoint - WORKING VERSION"""
+    try:
+        print("📊 Metrics dashboard API called")
+        
+        if ENHANCED_MODULES_AVAILABLE:
+            print("🔄 Using enhanced modules for dashboard data")
+            
+            # Create evaluator and get basic metrics
+            from .evaluation_metrics import RecommendationEvaluator
+            evaluator = RecommendationEvaluator()
+            
+            # Generate dashboard data manually since enhanced_engine methods may not exist
+            dashboard_data = {
+                'system_status': 'Enhanced modules active',
+                'total_evaluations': len(evaluator.evaluation_history),
+                'evaluator_config': evaluator.config,
+                'key_metrics': {
+                    'Precision@10': {'value': 0.0, 'count': 0},
+                    'Recall@10': {'value': 0.0, 'count': 0},
+                    'F1@10': {'value': 0.0, 'count': 0},
+                    'Cosine Similarity': {'value': 0.0, 'count': 0},
+                    'Diverzitás': {'value': 0.0, 'count': 0},
+                    'Fenntarthatóság': {'value': 0.0, 'count': 0}
+                },
+                'available_metrics': [
+                    'Precision@K (K=5,10,20)',
+                    'Recall@K (K=5,10,20)', 
+                    'F1-Score@K (K=5,10,20)',
+                    'Cosine Similarity',
+                    'Content Diversity',
+                    'Sustainability Scores (ESI, HSI, PPI)'
+                ],
+                'enhanced_available': True
+            }
+            
+            # If we have evaluation history, calculate real metrics
+            if evaluator.evaluation_history:
+                recent_evals = evaluator.evaluation_history[-10:]
+                
+                # Calculate averages
+                precision_values = [e.get('precision_at_10', 0) for e in recent_evals if 'precision_at_10' in e]
+                recall_values = [e.get('recall_at_10', 0) for e in recent_evals if 'recall_at_10' in e]
+                f1_values = [e.get('f1_score_at_10', 0) for e in recent_evals if 'f1_score_at_10' in e]
+                similarity_values = [e.get('avg_similarity_score', 0) for e in recent_evals if 'avg_similarity_score' in e]
+                diversity_values = [e.get('intra_list_diversity', 0) for e in recent_evals if 'intra_list_diversity' in e]
+                sustainability_values = [e.get('avg_sustainability_score', 0) for e in recent_evals if 'avg_sustainability_score' in e]
+                
+                if precision_values:
+                    dashboard_data['key_metrics']['Precision@10'] = {
+                        'value': round(sum(precision_values) / len(precision_values), 3),
+                        'count': len(precision_values)
+                    }
+                
+                if recall_values:
+                    dashboard_data['key_metrics']['Recall@10'] = {
+                        'value': round(sum(recall_values) / len(recall_values), 3),
+                        'count': len(recall_values)
+                    }
+                
+                if f1_values:
+                    dashboard_data['key_metrics']['F1@10'] = {
+                        'value': round(sum(f1_values) / len(f1_values), 3),
+                        'count': len(f1_values)
+                    }
+                
+                if similarity_values:
+                    dashboard_data['key_metrics']['Cosine Similarity'] = {
+                        'value': round(sum(similarity_values) / len(similarity_values), 3),
+                        'count': len(similarity_values)
+                    }
+                
+                if diversity_values:
+                    dashboard_data['key_metrics']['Diverzitás'] = {
+                        'value': round(sum(diversity_values) / len(diversity_values), 3),
+                        'count': len(diversity_values)
+                    }
+                
+                if sustainability_values:
+                    dashboard_data['key_metrics']['Fenntarthatóság'] = {
+                        'value': round(sum(sustainability_values) / len(sustainability_values), 3),
+                        'count': len(sustainability_values)
+                    }
+            
+            return jsonify({
+                'status': 'success',
+                'data': dashboard_data
+            })
+        else:
+            print("⚠️ Enhanced modules not available")
+            return jsonify({
+                'status': 'error',
+                'message': 'Enhanced modules not available'
+            }), 503
+            
+    except Exception as e:
+        print(f"❌ Metrics dashboard API error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
+@user_study_bp.route('/api/evaluation-summary')
+def evaluation_summary_api():
+    """Evaluation summary API endpoint - WORKING VERSION"""
+    try:
+        print("📈 Evaluation summary API called")
+        
+        if ENHANCED_MODULES_AVAILABLE:
+            print("🔄 Using enhanced modules for evaluation summary")
+            
+            from .evaluation_metrics import RecommendationEvaluator
+            evaluator = RecommendationEvaluator()
+            
+            # Get evaluation summary
+            if evaluator.evaluation_history:
+                summary = evaluator.get_evaluation_summary()
+                print(f"📊 Found {len(evaluator.evaluation_history)} evaluations")
+            else:
+                summary = {
+                    'message': 'No evaluations available yet',
+                    'total_evaluations': 0,
+                    'recent_evaluations': 0,
+                    'instructions': 'Start using the recommendation system to generate metrics',
+                    'available_endpoints': [
+                        '/api/test/simple_metrics - Test basic metrics',
+                        '/api/metrics/precision_recall - Calculate P/R/F1',
+                        '/api/metrics/cosine_similarity - Calculate similarity'
+                    ]
+                }
+                print("📊 No evaluation history found")
+            
+            return jsonify({
+                'status': 'success',
+                'data': summary
+            })
+        else:
+            print("⚠️ Enhanced modules not available for evaluation summary")
+            return jsonify({
+                'status': 'error',
+                'message': 'Enhanced evaluation not available'
+            }), 503
+            
+    except Exception as e:
+        print(f"❌ Evaluation summary API error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
+# ========================================
+# ADDITIONAL API ENDPOINTS FOR TESTING
+# ========================================
+
+@user_study_bp.route('/api/metrics/generate_sample_data', methods=['POST'])
+def generate_sample_metrics():
+    """Generate sample evaluation data for testing"""
+    try:
+        if not ENHANCED_MODULES_AVAILABLE:
+            return jsonify({'error': 'Enhanced modules not available'}), 503
+        
+        from .evaluation_metrics import RecommendationEvaluator
+        evaluator = RecommendationEvaluator()
+        
+        # Generate sample evaluation
+        sample_recommendations = [
+            {
+                'id': 'sample_1',
+                'similarity_score': 0.85,
+                'final_score': 0.90,
+                'sustainability_score': 88,
+                'HSI': 90,
+                'ESI': 85,
+                'PPI': 75,
+                'category': 'healthy',
+                'ingredients': 'quinoa spinach tomatoes'
+            },
+            {
+                'id': 'sample_2',
+                'similarity_score': 0.75,
+                'final_score': 0.80,
+                'sustainability_score': 72,
+                'HSI': 70,
+                'ESI': 75,
+                'PPI': 80,
+                'category': 'comfort',
+                'ingredients': 'pasta cheese herbs'
+            }
+        ]
+        
+        sample_ground_truth = {
+            'sample_1': 4.5,
+            'sample_2': 3.8
+        }
+        
+        # Evaluate
+        metrics = evaluator.evaluate_recommendations(
+            recommendations=sample_recommendations,
+            ground_truth=sample_ground_truth,
+            session_id='sample_generation'
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Sample evaluation data generated',
+            'metrics': metrics,
+            'total_evaluations': len(evaluator.evaluation_history)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@user_study_bp.route('/api/metrics/comprehensive_evaluation', methods=['POST'])
+def comprehensive_evaluation_api():
+    """Comprehensive evaluation API with full metrics"""
+    try:
+        if not ENHANCED_MODULES_AVAILABLE:
+            return jsonify({'error': 'Enhanced modules not available'}), 503
+        
+        data = request.get_json() or {}
+        recommendations = data.get('recommendations', [])
+        ground_truth = data.get('ground_truth', {})
+        user_profile = data.get('user_profile', {})
+        session_id = data.get('session_id', f'eval_{int(time.time())}')
+        
+        if not recommendations:
+            return jsonify({'error': 'No recommendations provided'}), 400
+        
+        from .evaluation_metrics import RecommendationEvaluator
+        evaluator = RecommendationEvaluator()
+        
+        # Comprehensive evaluation
+        metrics = evaluator.evaluate_recommendations(
+            recommendations=recommendations,
+            ground_truth=ground_truth,
+            user_profile=user_profile,
+            session_id=session_id
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'session_id': session_id,
+            'metrics': metrics,
+            'evaluation_config': evaluator.config,
+            'available_metrics': list(metrics.keys()),
+            'total_evaluations': len(evaluator.evaluation_history)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'error_type': type(e).__name__
+        }), 500
 # =============================================
 # END OF ENHANCED API ENDPOINTS
 # =============================================
