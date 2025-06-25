@@ -45,23 +45,69 @@ import io
 import json
 from datetime import datetime
 # Enhanced modules (conditional import) - FIXED VERSION WITH PATH
+# 🎯 PONTOS JAVÍTÁS - user_study/routes.py
+# Az Enhanced modules import blokkot (line ~40-55 körül) REPLACE-eld ezzel:
+
+# Enhanced modules (conditional import) - WORKING VERSION
 try:
     import sys
     import os
+    
     # Add current directory to Python path for imports
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
+    parent_dir = os.path.dirname(current_dir)
     
-    from enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
-    from evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
-    from enhanced_routes_integration import EnhancedRecommendationEngine
+    # Add both paths to sys.path if not already there
+    for path in [current_dir, parent_dir]:
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    
+    print(f"🔍 Current dir: {current_dir}")
+    print(f"🔍 Parent dir: {parent_dir}")
+    print(f"🔍 Python path updated")
+    
+    # Try multiple import strategies
+    try:
+        # Strategy 1: Relative imports (preferred)
+        from .enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
+        from .evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+        print("✅ Enhanced modules loaded with relative imports")
+        import_strategy = "relative"
+    except ImportError as e1:
+        print(f"⚠️ Relative imports failed: {e1}")
+        try:
+            # Strategy 2: Absolute imports from user_study package
+            from user_study.enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
+            from user_study.evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+            print("✅ Enhanced modules loaded with user_study prefix")
+            import_strategy = "user_study_prefix"
+        except ImportError as e2:
+            print(f"⚠️ user_study prefix failed: {e2}")
+            # Strategy 3: Direct imports (fallback)
+            from enhanced_content_based import EnhancedContentBasedRecommender, create_enhanced_recommender, convert_old_recipe_format
+            from evaluation_metrics import RecommendationEvaluator, MetricsTracker, create_evaluator
+            print("✅ Enhanced modules loaded with direct imports")
+            import_strategy = "direct"
+    
+    # Don't import enhanced_routes_integration for now - it causes circular imports
     ENHANCED_MODULES_AVAILABLE = True
-    print("✅ Enhanced modules loaded successfully")
+    print(f"✅ Enhanced modules loaded successfully using {import_strategy} strategy")
+    
 except ImportError as e:
     print(f"⚠️ Enhanced modules not available: {e}")
     print("🔧 Falling back to original recommendation system")
     ENHANCED_MODULES_AVAILABLE = False
+    import_strategy = "none"
+except Exception as e:
+    print(f"❌ Unexpected error loading enhanced modules: {e}")
+    import traceback
+    traceback.print_exc()
+    ENHANCED_MODULES_AVAILABLE = False
+    import_strategy = "error"
+
+# Print final status
+print(f"🎯 ENHANCED_MODULES_AVAILABLE: {ENHANCED_MODULES_AVAILABLE}")
+print(f"🎯 Import strategy used: {import_strategy}")
 # Blueprint és paths
 user_study_bp = Blueprint('user_study', __name__, url_prefix='')
 
@@ -1943,25 +1989,256 @@ def evaluation_summary():
         }), 500
 
 @user_study_bp.route('/dashboard')
-def metrics_dashboard_page():
-    """Metrics dashboard page"""
+def enhanced_metrics_dashboard():
+    """Enhanced Metrics Dashboard - FIXED VERSION"""
+    print("🎯 Dashboard route accessed")
+    
     try:
-        dashboard_data = {}
+        # Initialize default data
+        dashboard_data = {
+            'system_status': 'Initializing...',
+            'available_metrics': [],
+            'total_evaluations': 0,
+            'enhanced_available': ENHANCED_MODULES_AVAILABLE
+        }
         evaluation_summary = {}
         
-        if hasattr(recommender, 'enhanced_engine') and recommender.enhanced_engine and ENHANCED_MODULES_AVAILABLE:
-            dashboard_data = recommender.enhanced_engine.get_metrics_dashboard_data()
-            evaluation_summary = recommender.enhanced_engine.get_evaluation_summary()
+        if ENHANCED_MODULES_AVAILABLE:
+            print("🔄 Enhanced modules available, initializing...")
+            try:
+                # Create evaluator instance
+                evaluator = RecommendationEvaluator()
+                print("✅ RecommendationEvaluator created")
+                
+                # Prepare dashboard data
+                dashboard_data = {
+                    'system_status': 'Enhanced modules active',
+                    'available_metrics': [
+                        'Precision@K (K=5,10,20)',
+                        'Recall@K (K=5,10,20)', 
+                        'F1-Score@K (K=5,10,20)',
+                        'Cosine Similarity',
+                        'Euclidean Similarity',
+                        'Correlation Similarity',
+                        'Content Diversity',
+                        'Category Diversity',
+                        'Ingredient Diversity',
+                        'Sustainability Scores (ESI, HSI, PPI)',
+                        'Coverage Metrics',
+                        'User Profile Similarity'
+                    ],
+                    'total_evaluations': len(evaluator.evaluation_history),
+                    'config': evaluator.config,
+                    'enhanced_available': True,
+                    'import_strategy': globals().get('import_strategy', 'unknown')
+                }
+                
+                # Get evaluation summary
+                if evaluator.evaluation_history:
+                    evaluation_summary = evaluator.get_evaluation_summary()
+                    print(f"📊 Found {len(evaluator.evaluation_history)} evaluations")
+                else:
+                    evaluation_summary = {
+                        'message': 'No evaluations yet',
+                        'instructions': 'Start a user study to generate metrics',
+                        'sample_evaluation_url': '/api/test/simple_metrics'
+                    }
+                    print("📊 No evaluation history found")
+                
+                print("✅ Enhanced dashboard data prepared successfully")
+                
+            except Exception as e:
+                print(f"❌ Error in enhanced dashboard preparation: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                dashboard_data = {
+                    'system_status': f'Enhanced modules error: {str(e)}',
+                    'available_metrics': ['Error loading enhanced metrics'],
+                    'total_evaluations': 0,
+                    'enhanced_available': False,
+                    'error_details': str(e)
+                }
+                evaluation_summary = {
+                    'error': str(e),
+                    'fallback_message': 'Use /admin/stats for basic metrics'
+                }
+        else:
+            print("⚠️ Enhanced modules not available, using fallback")
+            dashboard_data = {
+                'system_status': 'Enhanced modules not loaded',
+                'available_metrics': [
+                    'Basic user study metrics available at /admin/stats',
+                    'CSV exports available at /admin/export/*'
+                ],
+                'total_evaluations': 0,
+                'enhanced_available': False,
+                'fallback_reason': 'Dependencies or import issues'
+            }
+            evaluation_summary = {
+                'message': 'Enhanced metrics not available',
+                'fallback_dashboard': '/admin/stats',
+                'debug_endpoint': '/debug/enhanced_status'
+            }
         
+        print("🎨 Rendering metrics_dashboard.html template...")
+        
+        # Render template
         return render_template('metrics_dashboard.html', 
                              dashboard_data=dashboard_data,
                              evaluation_summary=evaluation_summary,
                              enhanced_available=ENHANCED_MODULES_AVAILABLE)
                              
     except Exception as e:
-        return render_template('error.html', 
-                             error_message=f"Dashboard error: {e}") if 'error.html' in [t.name for t in current_app.jinja_env.list_templates()] else f"Dashboard error: {e}"
+        print(f"💥 Critical dashboard error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return detailed JSON error (not 500) to help debugging
+        error_response = {
+            'error': 'Dashboard temporarily unavailable',
+            'details': str(e),
+            'enhanced_modules_available': ENHANCED_MODULES_AVAILABLE,
+            'debug_info': {
+                'error_type': type(e).__name__,
+                'import_strategy': globals().get('import_strategy', 'unknown')
+            },
+            'alternative_endpoints': {
+                'basic_stats': '/admin/stats',
+                'debug_status': '/debug/enhanced_status',
+                'simple_test': '/api/test/simple_metrics'
+            }
+        }
+        
+        return jsonify(error_response), 200  # 200 instead of 500 for better debugging
+        
+@user_study_bp.route('/debug/enhanced_status')
+def debug_enhanced_status():
+    """Enhanced modulok részletes státusza"""
+    try:
+        import sys
+        
+        status = {
+            'enhanced_modules_available': ENHANCED_MODULES_AVAILABLE,
+            'import_strategy': globals().get('import_strategy', 'unknown'),
+            'current_working_directory': os.getcwd(),
+            'script_directory': os.path.dirname(os.path.abspath(__file__)),
+            'python_path_relevant': [p for p in sys.path if 'user_study' in p or 'sysrec' in p],
+            'dependencies_status': {
+                'sklearn_in_modules': 'sklearn' in sys.modules,
+                'scipy_in_modules': 'scipy' in sys.modules,
+                'numpy_in_modules': 'numpy' in sys.modules,
+                'pandas_in_modules': 'pandas' in sys.modules
+            }
+        }
+        
+        # Test individual module imports
+        modules_test = {}
+        
+        for module_name in ['enhanced_content_based', 'evaluation_metrics']:
+            try:
+                if module_name == 'enhanced_content_based':
+                    from enhanced_content_based import EnhancedContentBasedRecommender
+                    modules_test[module_name] = 'OK - EnhancedContentBasedRecommender imported'
+                elif module_name == 'evaluation_metrics':
+                    from evaluation_metrics import RecommendationEvaluator
+                    modules_test[module_name] = 'OK - RecommendationEvaluator imported'
+            except Exception as e:
+                modules_test[module_name] = f'ERROR: {str(e)}'
+        
+        status['individual_modules_test'] = modules_test
+        
+        # File existence check
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        files_check = {}
+        for file_name in ['enhanced_content_based.py', 'evaluation_metrics.py']:
+            file_path = os.path.join(current_dir, file_name)
+            files_check[file_name] = {
+                'exists': os.path.exists(file_path),
+                'path': file_path,
+                'size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
+            }
+        
+        status['files_check'] = files_check
+        
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'enhanced_modules_available': ENHANCED_MODULES_AVAILABLE
+        }), 500
 
+@user_study_bp.route('/api/test/simple_metrics')
+def test_simple_metrics():
+    """Egyszerű metrikák tesztelése"""
+    try:
+        if not ENHANCED_MODULES_AVAILABLE:
+            return jsonify({
+                'status': 'enhanced_modules_not_available',
+                'message': 'Enhanced modules could not be loaded',
+                'debug_endpoint': '/debug/enhanced_status'
+            })
+        
+        print("🧪 Testing simple metrics...")
+        
+        # Import and test
+        from evaluation_metrics import RecommendationEvaluator
+        evaluator = RecommendationEvaluator()
+        
+        # Test cosine similarity with simple vectors
+        import numpy as np
+        vec1 = np.array([1, 0, 1, 0])
+        vec2 = np.array([0, 1, 0, 1])
+        vec3 = np.array([1, 0, 1, 0])  # Same as vec1
+        
+        similarity_different = evaluator.cosine_similarity(
+            vec1.reshape(1, -1), vec2.reshape(1, -1)
+        )[0][0]
+        
+        similarity_same = evaluator.cosine_similarity(
+            vec1.reshape(1, -1), vec3.reshape(1, -1)
+        )[0][0]
+        
+        # Test precision/recall with sample data
+        sample_recommended = ['item1', 'item2', 'item3', 'item4', 'item5']
+        sample_ground_truth = {
+            'item1': 4.5,
+            'item2': 2.0,
+            'item3': 4.0,
+            'item4': 5.0,
+            'item5': 3.5
+        }
+        
+        precision_5 = evaluator.precision_at_k(sample_recommended, sample_ground_truth, 5)
+        recall_5 = evaluator.recall_at_k(sample_recommended, sample_ground_truth, 5)
+        f1_5 = evaluator.f1_score_at_k(precision_5, recall_5)
+        
+        return jsonify({
+            'status': 'success',
+            'test_results': {
+                'cosine_similarity_different_vectors': float(similarity_different),
+                'cosine_similarity_same_vectors': float(similarity_same),
+                'precision_at_5': precision_5,
+                'recall_at_5': recall_5,
+                'f1_score_at_5': f1_5
+            },
+            'evaluator_config': evaluator.config,
+            'enhanced_modules_available': True,
+            'import_strategy': globals().get('import_strategy', 'unknown')
+        })
+        
+    except Exception as e:
+        print(f"❌ Simple metrics test error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'error_type': type(e).__name__,
+            'enhanced_modules_available': ENHANCED_MODULES_AVAILABLE
+        }), 500
 # =============================================
 # END OF ENHANCED API ENDPOINTS
 # =============================================
